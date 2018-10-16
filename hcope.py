@@ -2,12 +2,11 @@ import numpy as np
 import random
 import math
 from scipy.optimize import minimize
-
-
+from scipy.special import j1
+from scipy.optimize import minimize_scalar
 
 
 # TODO
-# Add constraints
 # Add Sanity Check
 
 def hcope_estimator(d_pre, d_post, pi_b,pi_e,delta):
@@ -53,7 +52,6 @@ def hcope_estimator(d_pre, d_post, pi_b,pi_e,delta):
 
 	c_estimate = minimize(f,np.array([c_estimate]),method='BFGS').x
 
-
 	# Use the estimated c for computing the maximum lower bound
 	c = c_estimate
 
@@ -98,10 +96,7 @@ if __name__=="__main__":
     d_post = dataset[int(0.05*dataset_size):]
     # Ensure small divergence between both policy
     pi_b = np.random.uniform(low=0.02, high=0.1, size=(dataset_size,))
-    #random.sample(xrange(2,10),dataset_size)/100
     pi_e = np.random.uniform(low=0.001, high=0.006, size=(dataset_size,))+ pi_b
-
-    # pi_e = random.sample(xrange(1,6),dataset_size)/1000 + pi_b
 
     delta_confidence = 0.1
     print('Performance of behaviour policy: ' ,np.sum(dataset)/len(dataset))
