@@ -17,7 +17,7 @@ Implementation of:
 * Consistent Weighted Per-Decision Importance Sampling (CWPDIS) Estimator   
     
 Comparision of different importance sampling estimators:   
-![Different Importance sampling estimators](http://url/to/img.png)   
+![Different Importance sampling estimators](https://github.com/hari-sikchi/HCOPE/blob/master/importance_sampling/importance_sampling.png)   
 
  Image is taken from phD thesis of P.Thomas:    
  Links: https://people.cs.umass.edu/~pthomas/papers/Thomas2015c.pdf   
