@@ -1,4 +1,7 @@
-# HCOPE
+# Safe Reinforcement Learning   
+
+## HCOPE
+
 High-Confidence Off-Policy Evaluation.
    
 
