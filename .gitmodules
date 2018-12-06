@@ -1,0 +1,3 @@
+[submodule "MADRaS"]
+	path = MADRaS
+	url = https://github.com/madras-simulator/MADRaS
