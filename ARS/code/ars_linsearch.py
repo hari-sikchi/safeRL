@@ -9,6 +9,7 @@ import parser
 import time
 import os
 import numpy as np
+import gym
 import logz
 import ray
 import utils
@@ -16,11 +17,10 @@ import optimizers
 from policies import *
 import socket
 from shared_noise import *
-import sys
-#sys.path.append('/home/harshit/work/MADRaS/')
 import MADRaS
-import gym
-from gym import wrappers
+import sys
+#f = open('logs_1.txt', 'w')
+#sys.stdout = f
 
 @ray.remote
 class Worker(object):
@@ -36,12 +36,14 @@ class Worker(object):
                  delta_std=0.02):
 
  
-        sys.path.append('/home/harshit/work/')
-        import MADRaS
+        #sys.path.append('/home/harshit/work/')
+        #import MADRaS
  
         # initialize OpenAI environment for each worker
         
         # logging.warning('Env start')
+        sys.path.append('/home/harshit/work')
+        import MADRaS
         self.env_name = env_name
         self.env = gym.make(env_name)
         self.env.seed(env_seed)
@@ -49,10 +51,13 @@ class Worker(object):
         # each worker gets access to the shared noise table
         # with independent random streams for sampling
         # from the shared noise table. 
-        self.deltas = SharedNoiseTable(deltas, 1 + 7)
+        self.deltas = SharedNoiseTable(deltas, env_seed + 7)
         self.policy_params = policy_params
         if policy_params['type'] == 'linear':
             self.policy = LinearPolicy(policy_params)
+
+        elif policy_params['type'] == 'bilayer':
+            self.policy = BilayerPolicy(policy_params)
         else:
             raise NotImplementedError
             
@@ -69,7 +74,7 @@ class Worker(object):
         """ 
         Get current policy weights and current statistics of past states.
         """
-        assert self.policy_params['type'] == 'linear'
+        assert (self.policy_params['type'] == 'bilayer' or self.policy_params['type'] == 'linear')
         return self.policy.get_weights_plus_stats()
     
 
@@ -96,17 +101,26 @@ class Worker(object):
             
         return total_reward, steps
 
+    def linesearch(self, delta, backtrack_ratio=0.5, num_backtracks=10):
+        deltas = [delta]
+        for i in range(num_backtracks/2):
+            deltas.append(delta*(backtrack_ratio)**i)
+            deltas.insert(0,delta/(backtrack_ratio)**i)
+        return deltas
+
+
     def do_rollouts(self, w_policy, num_rollouts = 1, shift = 1, evaluate = False):
         """ 
         Generate multiple rollouts with a policy parametrized by w_policy.
         """
 
-        rollout_rewards, deltas_idx = [], []
+        rollout_rewards, deltas_idx,deltas_ratio = [], [], []
         steps = 0
 
         for i in range(num_rollouts):
 
             if evaluate:
+                print("EVAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAL")
                 self.policy.update_weights(w_policy)
                 deltas_idx.append(-1)
                 
@@ -124,21 +138,48 @@ class Worker(object):
                 delta = (self.delta_std * delta).reshape(w_policy.shape)
                 deltas_idx.append(idx)
 
-                # set to true so that state statistics are updated 
-                self.policy.update_filter = True
+                # # set to true so that state statistics are updated 
+                # self.policy.update_filter = True
 
-                # compute reward and number of timesteps used for positive perturbation rollout
-                self.policy.update_weights(w_policy + delta)
-                pos_reward, pos_steps  = self.rollout(shift = shift)
+                # # compute reward and number of timesteps used for positive perturbation rollout
+                # self.policy.update_weights(w_policy + delta)
+                # pos_reward, pos_steps  = self.rollout(shift = shift)
 
-                # compute reward and number of timesteps used for negative pertubation rollout
-                self.policy.update_weights(w_policy - delta)
-                neg_reward, neg_steps = self.rollout(shift = shift) 
-                steps += pos_steps + neg_steps
+                # # compute reward and number of timesteps used for negative pertubation rollout
+                # self.policy.update_weights(w_policy - delta)
+                # neg_reward, neg_steps = self.rollout(shift = shift) 
+                # steps += pos_steps + neg_steps
 
-                rollout_rewards.append([pos_reward, neg_reward])
+                # rollout_rewards.append([pos_reward, neg_reward])
+                deltas = self.linesearch(delta)
+                max_rollout_reward_diff=-np.inf
+                best_delta=delta
+                best_pos=0
+                best_neg=0
+                delta_ratio=1
+                for i, delta_ in enumerate(deltas):
+                    self.policy.update_filter = True
+
+                    # compute reward and number of timesteps used for positive perturbation rollout
+                    self.policy.update_weights(w_policy + delta_)
+                    pos_reward, pos_steps  = self.rollout(shift = shift)
+
+                    # compute reward and number of timesteps used for negative pertubation rollout
+                    self.policy.update_weights(w_policy - delta_)
+                    neg_reward, neg_steps = self.rollout(shift = shift) 
+                    steps += pos_steps + neg_steps
+                    if max_rollout_reward_diff<max(pos_reward,neg_reward):
+                        max_rollout_reward_diff=max(pos_reward,neg_reward)
+                        best_delta = delta_
+                        best_pos= pos_reward
+                        best_neg=neg_reward
+                        delta_ratio = best_delta/delta 
+
+
+                rollout_rewards.append([best_pos, best_neg])
+                deltas_ratio.append(delta_ratio)
                             
-        return {'deltas_idx': deltas_idx, 'rollout_rewards': rollout_rewards, "steps" : steps}
+        return {'deltas_idx': deltas_idx,'deltas_ratio':deltas_ratio, 'rollout_rewards': rollout_rewards, "steps" : steps}
     
     def stats_increment(self):
         self.policy.observation_filter.stats_increment()
@@ -214,6 +255,9 @@ class ARSLearner(object):
         if policy_params['type'] == 'linear':
             self.policy = LinearPolicy(policy_params)
             self.w_policy = self.policy.get_weights()
+        elif policy_params['type'] == 'bilayer':
+            self.policy = BilayerPolicy(policy_params)
+            self.w_policy = self.policy.get_weights()
         else:
             raise NotImplementedError
             
@@ -228,14 +272,17 @@ class ARSLearner(object):
 
         if num_rollouts is None:
             num_deltas = self.num_deltas
+            #print("TRAIN")
         else:
             num_deltas = num_rollouts
+            #print("TEST")
             
         # put policy weights in the object store
         policy_id = ray.put(self.w_policy)
 
         t1 = time.time()
         num_rollouts = int(num_deltas / self.num_workers)
+        #print("NUM_ROLLOUTS {}".format(num_rollouts))
             
         # parallel generation of rollouts
         rollout_ids_one = [worker.do_rollouts.remote(policy_id,
@@ -252,21 +299,24 @@ class ARSLearner(object):
         results_one = ray.get(rollout_ids_one)
         results_two = ray.get(rollout_ids_two)
 
-        rollout_rewards, deltas_idx = [], [] 
+        rollout_rewards, deltas_idx, deltas_ratio = [], [], [] 
 
         for result in results_one:
             if not evaluate:
                 self.timesteps += result["steps"]
             deltas_idx += result['deltas_idx']
+            deltas_ratio += result['deltas_ratio']
             rollout_rewards += result['rollout_rewards']
 
         for result in results_two:
             if not evaluate:
                 self.timesteps += result["steps"]
             deltas_idx += result['deltas_idx']
+            deltas_ratio += result['deltas_ratio']
             rollout_rewards += result['rollout_rewards']
 
         deltas_idx = np.array(deltas_idx)
+        deltas_ratio = np.array(delta_ratio)
         rollout_rewards = np.array(rollout_rewards, dtype = np.float64)
         
         print('Maximum reward of collected rollouts:', rollout_rewards.max())
@@ -284,6 +334,7 @@ class ARSLearner(object):
             
         idx = np.arange(max_rewards.size)[max_rewards >= np.percentile(max_rewards, 100*(1 - (self.deltas_used / self.num_deltas)))]
         deltas_idx = deltas_idx[idx]
+        deltas_ratio=deltas_ratio[idx]
         rollout_rewards = rollout_rewards[idx,:]
         
         # normalize rewards by their standard deviation
@@ -292,7 +343,7 @@ class ARSLearner(object):
         t1 = time.time()
         # aggregate rollouts to form g_hat, the gradient used to compute SGD step
         g_hat, count = utils.batched_weighted_sum(rollout_rewards[:,0] - rollout_rewards[:,1],
-                                                  (self.deltas.get(idx, self.w_policy.size)
+                                                  (self.deltas.get_mod(idx, self.w_policy.size, deltas_ratio)
                                                    for idx in deltas_idx),
                                                   batch_size = 500)
         g_hat /= deltas_idx.size
@@ -309,10 +360,11 @@ class ARSLearner(object):
         g_hat = self.aggregate_rollouts()                    
         print("Euclidean norm of update step:", np.linalg.norm(g_hat))
         self.w_policy -= self.optimizer._compute_step(g_hat).reshape(self.w_policy.shape)
+        self.policy.update_weights(self.w_policy)
         return
 
     def train(self, num_iter):
-        max_reward_ever = -np.inf
+        max_reward_ever=-1
         start = time.time()
         for i in range(num_iter):
             
@@ -324,16 +376,17 @@ class ARSLearner(object):
             # if i == num_iter-1:
             #     np.savez(self.logdir + "/lin_policy_plus" + str(i), w) 
             # record statistics every 10 iterations
-            if ((i + 1) % 10 == 0):
+            if ((i + 1) % 50 == 0):
                 
-                rewards = self.aggregate_rollouts(num_rollouts = 100, evaluate = True)
-                w = ray.get(self.workers[0].get_weights_plus_stats.remote())
+                rewards = self.aggregate_rollouts(num_rollouts = 30, evaluate = True)
+                print("SHAPE",rewards.shape)
                 if(np.mean(rewards)>max_reward_ever):
                     max_reward_ever=np.mean(rewards)
-                    np.savez(self.logdir + "/lin_policy_plus" + str(i),w)
+                #     np.savez(self.logdir + "/lin_policy_plus", w)
 
-                #np.savez(self.logdir + "/lin_policy_plus" + str(i), w)
-                
+                w = ray.get(self.workers[0].get_weights_plus_stats.remote())
+                np.savez(self.logdir + "/bi_policy_num_plus" + str(i), w)
+                torch.save(self.policy.net.state_dict(),self.logdir + "/bi_policy_num_plus_torch" + str(i)+ ".pt")
                 print(sorted(self.params.items()))
                 logz.log_tabular("Time", time.time() - start)
                 logz.log_tabular("Iteration", i + 1)
@@ -380,12 +433,9 @@ def run_ars(params):
     env = gym.make(params['env_name'])
     ob_dim = env.observation_space.shape[0]
     ac_dim = env.action_space.shape[0]
-    # myf=open('temp_print.txt','w')
-    # myf.write("obs_dim: {0},action_dim:{1}".format(ob_dim,ac_dim))
-    # myf.close()
-    # print("obs_dim: {0},action_dim:{1}".format(ob_dim,ac_dim))
+
     # set policy parameters. Possible filters: 'MeanStdFilter' for v2, 'NoFilter' for v1.
-    policy_params={'type':'linear',
+    policy_params={'type':'bilayer',
                    'ob_filter':params['filter'],
                    'ob_dim':ob_dim,
                    'ac_dim':ac_dim}
@@ -412,12 +462,12 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--env_name', type=str, default='Madras-v0')
-    parser.add_argument('--n_iter', '-n', type=int, default=200)
-    parser.add_argument('--n_directions', '-nd', type=int, default=40)
-    parser.add_argument('--deltas_used', '-du', type=int, default=30)
-    parser.add_argument('--step_size', '-s', type=float, default=0.01)
+    parser.add_argument('--n_iter', '-n', type=int, default=1000)
+    parser.add_argument('--n_directions', '-nd', type=int, default=8)
+    parser.add_argument('--deltas_used', '-du', type=int, default=8)
+    parser.add_argument('--step_size', '-s', type=float, default=0.02)
     parser.add_argument('--delta_std', '-std', type=float, default=.03)
-    parser.add_argument('--n_workers', '-e', type=int, default=12)
+    parser.add_argument('--n_workers', '-e', type=int, default=6)
     parser.add_argument('--rollout_length', '-r', type=int, default=10000)
 
     # for Swimmer-v1 and HalfCheetah-v1 use shift = 0
@@ -425,14 +475,15 @@ if __name__ == '__main__':
     # for Humanoid-v1 used shift = 5
     parser.add_argument('--shift', type=float, default=0)
     parser.add_argument('--seed', type=int, default=237)
-    parser.add_argument('--policy_type', type=str, default='linear')
-    parser.add_argument('--dir_path', type=str, default='trained_policies/Madras-v4')
+    parser.add_argument('--policy_type', type=str, default='bilayer')
+    parser.add_argument('--dir_path', type=str, default='trained_policies/Policy_Madrasbi_32')
+    parser.add_argument('--logdir', type=str, default='trained_policies/Policy_Madrasbi_32')
 
     # for ARS V1 use filter = 'NoFilter'
     parser.add_argument('--filter', type=str, default='MeanStdFilter')
 
     local_ip = socket.gethostbyname(socket.gethostname())
-    ray.init(redis_address= 'localhost' + ':6380')
+    ray.init(redis_address="10.32.6.37:6382")
     
     args = parser.parse_args()
     params = vars(args)

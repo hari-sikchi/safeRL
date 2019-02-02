@@ -25,10 +25,9 @@ class Policy(object):
         self.observation_filter = get_filter(policy_params['ob_filter'], shape = (self.ob_dim,))
         self.update_filter = True
         
-    #def update_weights(self, new_weights):
-        #self.weights[:] = new_weights[:]
-         #vector_to_parameters(torch.tensor(new_weights), self.net.parameters())
-        #return
+    def update_weights(self, new_weights):
+        self.weights[:] = new_weights[:]
+        return
 
     def get_weights(self):
         return self.weights
@@ -65,13 +64,85 @@ class MLP(nn.Module):
 
     def __init__(self, input, output):
         super(MLP, self).__init__()
-        self.fc1 = nn.Linear(input, 128)
-        self.fc2 = nn.Linear(128, output)
+        self.fc1 = nn.Linear(input, 32)
+        self.fc2 = nn.Linear(32, output)
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
+        x = self.fc1(x)
+        x = F.relu(x)
+        # print(x)
+        #count = x.detach().numpy()
+        #count = np.where(count==0.0)
+        #print("COUNT",count[0].shape)
+        #print("ZERO {}".format(128-np.sum(np.nonzero(count)[0])))
         x = self.fc2(x)
         return x   
+
+
+class MLP_probs(nn.Module):
+
+    def __init__(self, input, output):
+        super(MLP_probs, self).__init__()
+        # self.fc1 = nn.Linear(input, 32)
+        # self.fc2 = nn.Linear(32, output)
+        self.fc1 = nn.Linear(input, output)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        #x = F.relu(x)
+        # print(x)
+        #count = x.detach().numpy()
+        #count = np.where(count==0.0)
+        #print("COUNT",count[0].shape)
+        #print("ZERO {}".format(128-np.sum(np.nonzero(count)[0])))
+        #x = self.fc2(x)
+        x = F.softmax(x)
+        return x   
+
+
+
+
+class BilayerPolicy_softmax(Policy):
+    """
+    Linear policy class that computes action as <w, ob>. 
+    """
+
+    def __init__(self, policy_params,trained_weights= None):
+        Policy.__init__(self, policy_params)
+        self.net = MLP_probs(self.ob_dim, self.ac_dim)
+        #lin_policy = np.load('/home/harshit/work/ARS/trained_policies/Policy_Testerbi2/bi_policy_num_plus149.npz')
+    
+        #lin_policy = lin_policy.items()[0][1]
+        #self.weights=None
+
+        self.weights = parameters_to_vector(self.net.parameters()).detach().double().numpy()
+        # if trained_weights is not None:
+        #     print("hieohrfoiahfoidanfkjahdfj")
+        #     vector_to_parameters(torch.tensor(trained_weights), self.net.parameters())
+        #     self.weights = trained_weights
+
+    def update_weights(self, new_weights):
+        print("UPDATE")
+        vector_to_parameters(torch.tensor(new_weights), self.net.parameters())
+        return
+
+
+
+    def act(self, ob):
+        ob = self.observation_filter(ob, update=self.update_filter)
+        obs = torch.from_numpy(ob)
+        # print(self.net(obs).detach().double().numpy())
+        probs = self.net(obs).detach().double().numpy()
+        return np.argmax(probs),probs[np.argmax(probs)]    
+
+    def get_weights_plus_stats(self):
+        
+        mu, std = self.observation_filter.get_stats()
+        #aux = np.asarray([self.weights.detach().double().numpy(), mu, std])
+        aux = np.asarray([self.weights, mu, std])
+
+        return aux
+
 
 class BilayerPolicy(Policy):
     """
@@ -111,36 +182,6 @@ class BilayerPolicy(Policy):
         aux = np.asarray([self.weights, mu, std])
 
         return aux
-
-class BilayerValue(object):
-
-    def __init__(self, obs_dim):
-        self.ob_dim = obs_dim
-        self.net = MLP(self.ob_dim, 1)
-        self.weights = parameters_to_vector(self.net.parameters()).detach().double().numpy()
-        self.observation_filter = get_filter(policy_params['ob_filter'], shape = (self.ob_dim,))
-        self.update_filter = True
-
-    def update_weights(self, new_weights):
-        print("UPDATE")
-        vector_to_parameters(torch.tensor(new_weights), self.net.parameters())
-        return
-
-    def predict(self, ob):
-        ob = self.observation_filter(ob, update=self.update_filter)
-        obs = torch.from_numpy(ob)
-        return self.net(obs).detach().double().numpy()
-
-    def get_weights_plus_stats(self):
-        
-        mu, std = self.observation_filter.get_stats()
-        #aux = np.asarray([self.weights.detach().double().numpy(), mu, std])
-        aux = np.asarray([self.weights, mu, std])
-
-        return aux
-
-
-
 
 
 def check_implementation():
