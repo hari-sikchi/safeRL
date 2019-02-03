@@ -122,7 +122,6 @@ class BilayerPolicy_softmax(Policy):
         #     self.weights = trained_weights
 
     def update_weights(self, new_weights):
-        print("UPDATE")
         vector_to_parameters(torch.tensor(new_weights), self.net.parameters())
         return
 
@@ -131,9 +130,15 @@ class BilayerPolicy_softmax(Policy):
     def act(self, ob):
         ob = self.observation_filter(ob, update=self.update_filter)
         obs = torch.from_numpy(ob)
-        # print(self.net(obs).detach().double().numpy())
         probs = self.net(obs).detach().double().numpy()
         return np.argmax(probs),probs[np.argmax(probs)]    
+
+    def act_action(self, ob,action):
+        ob = self.observation_filter(ob, update=self.update_filter)
+        obs = torch.from_numpy(ob)
+        probs = self.net(obs).detach().double().numpy()
+        return action,probs[action]    
+
 
     def get_weights_plus_stats(self):
         
@@ -152,19 +157,10 @@ class BilayerPolicy(Policy):
     def __init__(self, policy_params,trained_weights= None):
         Policy.__init__(self, policy_params)
         self.net = MLP(self.ob_dim, self.ac_dim)
-        #lin_policy = np.load('/home/harshit/work/ARS/trained_policies/Policy_Testerbi2/bi_policy_num_plus149.npz')
-    
-        #lin_policy = lin_policy.items()[0][1]
-        #self.weights=None
 
         self.weights = parameters_to_vector(self.net.parameters()).detach().double().numpy()
-        # if trained_weights is not None:
-        #     print("hieohrfoiahfoidanfkjahdfj")
-        #     vector_to_parameters(torch.tensor(trained_weights), self.net.parameters())
-        #     self.weights = trained_weights
 
     def update_weights(self, new_weights):
-        print("UPDATE")
         vector_to_parameters(torch.tensor(new_weights), self.net.parameters())
         return
 
