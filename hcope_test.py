@@ -19,10 +19,22 @@ class HCOPE(object):
         # Set up maximum and minimum reward in a trajectory
         self.R_max = 200
         self.R_min = 1
+
+        lin_policy = np.load('/home/harshit/work/ARS/trained_policies/Policy_mountain_car/bi_policy_num_plus99.npz')
+        
+        lin_policy1 = lin_policy.items()[0][1]
+
+        self.mean = lin_policy1[1]
+
+        self.std = lin_policy1[2]
+ 
+
+
         if eval_policy is None:
             self.e_policy = None
         else:
             self.e_policy=self.eval_policy.get_weights()
+            self.eval_policy.weights = self.e_policy 
 
 
     # Method to generate evaluation policy with gaussian noise added to our behaviour policy
@@ -30,6 +42,7 @@ class HCOPE(object):
         noise =  np.random.normal(0,0.01,self.w_policy.shape)
         self.e_policy = self.w_policy - noise
         self.eval_policy.update_weights(self.e_policy)
+
 
     def rollout(self,shift = 0.,policy = None, rollout_length = None,render = False):
         """ 
@@ -44,7 +57,7 @@ class HCOPE(object):
 
         ob = self.env.reset()
         for i in range(rollout_length):
-            action,prob = policy.act(ob)
+            action,prob = policy.act((ob-self.mean)/self.std)
             ob, reward, done, _ = self.env.step(action)
             steps += 1
             total_reward += (reward - shift)
@@ -56,7 +69,7 @@ class HCOPE(object):
         return total_reward, steps
 
     # Modified rollout method for HCOPE evaluation. Returns probs of each action that were taken in behavorial as well as evaluation policy
-    def mod_rollout(self,shift = 0., rollout_length = None,render = False,random =False,greedy=True):
+    def mod_rollout(self,shift = 0., rollout_length = None,render = False,random =False):
         """ 
         Performs one rollout of maximum length rollout_length. 
         At each time-step it substracts shift from the reward.
@@ -77,15 +90,10 @@ class HCOPE(object):
                 action = np.random.randint(0,env.action_space.n)
                 action,prob = self.policy.act_action(ob,action)
                 eval_action,eval_prob = self.eval_policy.act_action(ob,action)
-            elif greedy==False:
-                action,prob = self.policy.act(ob,greedy=greedy)               
-                eval_action,eval_prob = self.eval_policy.act_action(ob,action)
-                 
             else:
-                action,prob = self.policy.act(ob)
-                
-                eval_action,eval_prob = self.eval_policy.act_action(ob,action)
-            
+                action,prob = self.policy.act((ob-self.mean)/self.std)
+                #print(self.mean,self.std)
+                eval_action,eval_prob = self.eval_policy.act_action((ob-self.mean)/self.std,action)
             ob, reward, done, _ = self.env.step(action)
             rewards.append(reward- shift)
             probs.append(prob)
@@ -133,7 +141,7 @@ class HCOPE(object):
 
 
         for i in  range(dataset_size):
-            total_reward,steps,rewards_list,probs_list,eval_probs_list = self.mod_rollout(render=render,shift = shift,greedy=False)
+            total_reward,steps,rewards_list,probs_list,eval_probs_list = self.mod_rollout(render=render,shift = shift)
             rewards.append(rewards_list)
             probs.append(probs_list)
             eval_probs.append(eval_probs_list)            
@@ -166,27 +174,30 @@ class HCOPE(object):
 
         
     def visualize_IS_distribution(self):
-        episodes = 1000
+        episodes = 100
         probs=[]
         self.policy.update_weights(self.w_policy)
         self.policy.update_filter = False
         self.eval_policy.update_weights(self.e_policy)
         self.eval_policy.update_filter = False
 
+  
         eval_probs=[]
         for i in  range(episodes):
-            total_reward,steps,rewards_list,probs_list,eval_probs_list = self.mod_rollout(greedy=False)
+            # total_reward,steps,rewards_list,probs_list,eval_probs_list = self.mod_rollout(random=True)
+            total_reward,steps,rewards_list,probs_list,eval_probs_list = self.mod_rollout()
             probs.append(probs_list)
             eval_probs.append(eval_probs_list)            
 
-        
         probs = np.asarray(probs)
         eval_probs = np.asarray(eval_probs)
+        importance_weight = np.log(np.asarray([ np.prod(eval_probs[i]/probs[i].astype(np.float64)) for i in range(episodes)], dtype=float))
+        #print(importance_weight)
+        plt.hist(importance_weight, color = 'blue', edgecolor = 'black',bins = int(1000))
 
-        importance_weight = np.log(np.asarray([ np.prod(np.asarray(eval_probs[i])/np.asarray(probs[i])) for i in range(episodes)], dtype=float))
-        plt.hist(importance_weight, color = 'blue', edgecolor = 'black',bins = int(100))
-
+        #plt.plot(importance_weight, norm.pdf(importance_weight))
         plt.savefig("IS_dist.png")
+        #plt.show()
         
 
 
@@ -264,9 +275,7 @@ class HCOPE(object):
         importance_weights = np.asarray([ np.prod(pi_e_post[i]/pi_b_post[i].astype(np.float64)) for i in range(n_post)], dtype=float)
     
         # Empirical mean
-        c = np.asarray([max(1,i) for i in c])
-
-        EM = np.sum(Y/c[0])/(np.sum(1/c))
+        EM = np.sum(Y/c)/(np.sum(1/c))
 
         # Second term
         term2 = (7.*n_post*np.log(2./delta)) / (3*(n_post-1)*np.sum(1/c))
@@ -307,7 +316,6 @@ if __name__=="__main__":
     # Create a gym environment
     env_name = "MountainCar-v0"
     env = gym.make(env_name)
-
     # Assuming discrete action space
     action_size = env.action_space.n
     ob_size = env.observation_space.shape[0]
@@ -318,15 +326,14 @@ if __name__=="__main__":
                    'ob_dim':ob_size,
                    'ac_dim':action_size}
     policy = BilayerPolicy_softmax(policy_params)
-    eval_policy = BilayerPolicy_softmax(policy_params)
 
+    eval_policy = BilayerPolicy_softmax(policy_params)
     my_hcope = HCOPE(env,policy,eval_policy,rollout_length = 1000)
     my_hcope.setup_e_policy()
+    # dataset = my_hcope.generate_dataset(dataset_size=100,shift=-2)
+    # print("Estimate of behavorial policy: {}".format(my_hcope.evaluate(policy=my_hcope.policy,shift = -2,n_rollouts=100,render =False)))
 
-    dataset = my_hcope.generate_dataset(dataset_size=100,shift=-2)
-    print("Estimate of behavorial policy: {}".format(my_hcope.evaluate(policy=my_hcope.policy,shift = -2,n_rollouts=100,render =False)))
+    # my_hcope.estimate_behavior_policy(dataset)
+    # print("True estimate of evaluation policy: {}".format(my_hcope.evaluate(policy=my_hcope.eval_policy,shift = -2,n_rollouts=100,render =False)))
 
-    my_hcope.estimate_behavior_policy(dataset)
-    print("True estimate of evaluation policy: {}".format(my_hcope.evaluate(policy=my_hcope.eval_policy,shift = -2,n_rollouts=100,render =False)))
-
-    #my_hcope.visualize_IS_distribution()
+    my_hcope.visualize_IS_distribution()

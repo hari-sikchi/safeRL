@@ -83,13 +83,15 @@ class MLP_probs(nn.Module):
 
     def __init__(self, input, output):
         super(MLP_probs, self).__init__()
-        # self.fc1 = nn.Linear(input, 32)
-        # self.fc2 = nn.Linear(32, output)
-        self.fc1 = nn.Linear(input, output)
+        self.fc1 = nn.Linear(input, 32)
+        self.fc2 = nn.Linear(32, output)
+        #self.fc1 = nn.Linear(input, output)
 
     def forward(self, x):
         x = self.fc1(x)
-        #x = F.relu(x)
+        x = F.relu(x)
+        x = self.fc2(x)
+
         # print(x)
         #count = x.detach().numpy()
         #count = np.where(count==0.0)
@@ -116,10 +118,11 @@ class BilayerPolicy_softmax(Policy):
         #self.weights=None
 
         self.weights = parameters_to_vector(self.net.parameters()).detach().double().numpy()
-        # if trained_weights is not None:
-        #     print("hieohrfoiahfoidanfkjahdfj")
-        #     vector_to_parameters(torch.tensor(trained_weights), self.net.parameters())
-        #     self.weights = trained_weights
+        if trained_weights is not None:
+            #print("hieohrfoiahfoidanfkjahdfj")
+            self.net.load_state_dict(torch.load(trained_weights))
+            #vector_to_parameters(torch.tensor(trained_weights), self.net.parameters())
+            self.weights = parameters_to_vector(self.net.parameters()).detach().double().numpy()
 
     def update_weights(self, new_weights):
         vector_to_parameters(torch.tensor(new_weights), self.net.parameters())
@@ -127,10 +130,13 @@ class BilayerPolicy_softmax(Policy):
 
 
 
-    def act(self, ob):
+    def act(self, ob,greedy=True):
         ob = self.observation_filter(ob, update=self.update_filter)
         obs = torch.from_numpy(ob)
         probs = self.net(obs).detach().double().numpy()
+        if greedy==False:
+            action = np.random.choice(np.arange(probs.shape[0]), replace=True, p=probs)
+            return action,probs[action]    
         return np.argmax(probs),probs[np.argmax(probs)]    
 
     def act_action(self, ob,action):
@@ -143,7 +149,6 @@ class BilayerPolicy_softmax(Policy):
     def get_weights_plus_stats(self):
         
         mu, std = self.observation_filter.get_stats()
-        #aux = np.asarray([self.weights.detach().double().numpy(), mu, std])
         aux = np.asarray([self.weights, mu, std])
 
         return aux
@@ -174,7 +179,6 @@ class BilayerPolicy(Policy):
     def get_weights_plus_stats(self):
         
         mu, std = self.observation_filter.get_stats()
-        #aux = np.asarray([self.weights.detach().double().numpy(), mu, std])
         aux = np.asarray([self.weights, mu, std])
 
         return aux
