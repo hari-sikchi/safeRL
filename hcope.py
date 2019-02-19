@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 class HCOPE(object):
 
-    def __init__(self,env,policy,eval_policy,rollout_length):
+    def __init__(self,env,policy,eval_policy,rollout_length,delta=0.1):
         self.env = env
         self.policy= policy
         self.eval_policy=eval_policy
@@ -19,6 +19,7 @@ class HCOPE(object):
         # Set up maximum and minimum reward in a trajectory
         self.R_max = 200
         self.R_min = 1
+        self.delta=delta
         if eval_policy is None:
             self.e_policy = None
         else:
@@ -192,7 +193,7 @@ class HCOPE(object):
 
     def estimate_behavior_policy(self,dataset):
         d_pre,d_post,pi_b_pre,pi_b_post,pi_e_pre,pi_e_post = dataset
-        eval_estimate = self.hcope_estimator(d_pre, d_post, pi_b_pre,pi_b_post,pi_e_pre,pi_e_post,0.1)
+        eval_estimate = self.hcope_estimator(d_pre, d_post, pi_b_pre,pi_b_post,pi_e_pre,pi_e_post,self.delta)
         print("Estimate of evaluation policy: {}".format(eval_estimate))
 
     
@@ -320,7 +321,7 @@ if __name__=="__main__":
     policy = BilayerPolicy_softmax(policy_params)
     eval_policy = BilayerPolicy_softmax(policy_params)
 
-    my_hcope = HCOPE(env,policy,eval_policy,rollout_length = 1000)
+    my_hcope = HCOPE(env,policy,eval_policy,rollout_length = 1000,delta =0.1)
     my_hcope.setup_e_policy()
 
     dataset = my_hcope.generate_dataset(dataset_size=100,shift=-2)
