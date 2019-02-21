@@ -47,15 +47,24 @@ Output format:
 
 ## Safe exploration in continuous action spaces - Dalal et al.
 
-* Linear Safety Signal Model   
+### Running Instructions
+* Go inside ARS folder   
+* run python code/ars_safe_exploration.py   
+
+### Explaination
+
+* Linear Safety Signal Model    
+    
 ![Safety Signal](https://github.com/hari-sikchi/safeRL/blob/master/safety_signal.png)   
 
 
 
-* Safety Layer via Analytical Optimization    
+* Safety Layer via Analytical Optimization 
+   
 ![Safety Layer](https://github.com/hari-sikchi/safeRL/blob/master/safety_layer.png)   
 
-* Action Correction    
+* Action Correction   
+   
 ![Action Correction](https://github.com/hari-sikchi/safeRL/blob/master/safety_optimization.png)   
 
 
