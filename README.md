@@ -45,6 +45,19 @@ Output format:
 ![Output](https://github.com/hari-sikchi/safeRL/blob/master/Result.png)   
 
 
+## Safe exploration in continuous action spaces - Dalal et al.
+
+* Linear Safety Signal Model   
+![Safety Signal](https://github.com/hari-sikchi/safeRL/blob/master/safety_signal.png)   
+
+
+
+* Safety Layer via Analytical Optimization    
+![Safety Layer](https://github.com/hari-sikchi/safeRL/blob/master/safety_layer.png)   
+
+* Action Correction    
+![Action Correction](https://github.com/hari-sikchi/safeRL/blob/master/safety_optimization.png)   
+
 
 ## Importance Sampling
 
