@@ -1,5 +1,17 @@
 # Safe Reinforcement Learning Algorithms   
 
+Algorithms
+=================
+<!--ts-->
+   * [HCOPE](#hcope)
+   * [Safe Exploration](#safe_exploration)
+   * [Off Policy Evaluation](#importance_sampling)
+<!--te-->
+
+
+
+
+
 ## HCOPE (High-Confidence Off-Policy Evaluation.)
 
 
