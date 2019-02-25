@@ -1,6 +1,6 @@
 # Safe Reinforcement Learning Algorithms   
 
-Algorithms
+
 =================
 <!--ts-->
    * [HCOPE](#hcope)
@@ -11,7 +11,7 @@ Algorithms
 
 
 
-
+<a name="hcope"></a>
 ## HCOPE (High-Confidence Off-Policy Evaluation.)
 
 
@@ -55,7 +55,7 @@ method. Also, a graph of distribution of Importance sampling ratio is created wh
 Output format: 
 ![Output](https://github.com/hari-sikchi/safeRL/blob/master/results/Result.png)   
 
-
+<a name="safe_exploration"></a>
 ## Safe exploration in continuous action spaces.
 
 Paper: Safe Exploration in Continuous Action Spaces - Dalal et al.
@@ -101,7 +101,7 @@ This enables agent to learn while following the safety constraints.
 
 
 
-
+<a name="importance_sampling"></a>
 ## Importance Sampling
 
 Implementation of:    
