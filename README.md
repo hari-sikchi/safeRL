@@ -1,7 +1,6 @@
 # Safe Reinforcement Learning Algorithms   
-
-
 =================
+
 <!--ts-->
    * [HCOPE](#hcope)
    * [Safe Exploration](#safe_exploration)
@@ -77,7 +76,7 @@ This enables agent to learn while following the safety constraints.
 
 ![Safe Exploration](https://github.com/hari-sikchi/safeRL/blob/master/results/safe_actions.gif)
 
-* Instability is observed in safe exploration using this method.   
+* Instability is observed in safe exploration using this method. Here constraint is activated going left through the center of the road.(0.3)   
 
 ![Unstability due to Safe Exploration](https://github.com/hari-sikchi/safeRL/blob/master/results/safe_actions_instability.gif)   
 
