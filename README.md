@@ -44,13 +44,30 @@ Output format:
 ![Output](https://github.com/hari-sikchi/safeRL/blob/master/Result.png)   
 
 
-## Safe exploration in continuous action spaces - Dalal et al.
+## Safe exploration in continuous action spaces.
+
+Paper: Safe Exploration in Continuous Action Spaces - Dalal et al.
 
 ### Running Instructions
-* Go inside ARS folder   
-* run python code/ars_safe_exploration.py   
+* Go inside safe_exploration folder   
+* First learn the safety function by collecting experiences   
+       `python learn_safety_function.py`   
+* Now using the learned safety function, add the path of these learned torch weights in the train_safe_explorer.py file. After that:   
+       `python train_safe_explorer.py`
+This enables agent to learn while following the safety constraints.
+    
 
-### Explaination
+### Results
+
+
+* Safe exploration in a case where constraint is on crossing the right lane marker.
+![Safe Exploration](https://github.com/hari-sikchi/safeRL/blob/master/safe_actions.gif)
+
+* Instability is observed in safe exploration using this method.
+![Unstability due to Safe Exploration](https://github.com/hari-sikchi/safeRL/blob/master/safe_actions_instability.gif)   
+
+
+### Explanation
 
 * Linear Safety Signal Model    
     
@@ -65,6 +82,9 @@ Output format:
 * Action Correction   
    
 ![Action Correction](https://github.com/hari-sikchi/safeRL/blob/master/safety_optimization.png)   
+
+
+
 
 
 ## Importance Sampling
