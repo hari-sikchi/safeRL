@@ -35,8 +35,8 @@ import torch.nn.functional as F
 import torchvision.transforms as T
 import math
 import random
+import os
 os.environ["CUDA_VISIBLE_DEVICES"] = '0'
-
 
 Transition = namedtuple('Transition',('state', 'action', 'next_state', 'reward'))
 
@@ -100,7 +100,7 @@ class Worker(object):
         elif policy_params['type'] == 'bilayer':
             self.policy = BilayerPolicy(policy_params)
         elif policy_params['type'] == 'bilayer_safe_explorer':
-            self.policy = SafeBilayerExplorerPolicy(policy_params,trained_weights='/home/harshit/work/ARS/trained_policies/Madras-explore2/safeQ_torch99.pt')
+            self.policy = SafeBilayerExplorerPolicy(policy_params)
 
         else:
             raise NotImplementedError
@@ -133,56 +133,30 @@ class Worker(object):
 
         total_reward = 0.
         steps = 0
-        my_f= open('Violations.txt','a')
+        #my_f= open('hello1.txt','a')
         transitions = []
         record_transitions = True
-        cost = 0
+
         ob = self.env.reset()
         for i in range(rollout_length):
             #my_f.write("{} \n".format(ob[20]))
 
-            weights = self.policy.getQ(ob)
             action = self.policy.act(ob)
-            C = 20
-            # Solve the lagrangian
-            lagrangian = max(float(np.sum(weights*action) + cost -C)/(np.sum(weights**2)),0)
-            #my_f.write("lagrangian: {} \n".format(lagrangian))
-            a_star = action - lagrangian*weights
-            next_ob, reward, done, _ = self.env.step(a_star)
-            cost+= (weights.T.dot(action))
-            if(ob[20]>1 ):
-                my_f.write("Violated: \n")
-                my_f.write("action given: {} \n".format(action))     
-                my_f.write("action taken: {} \n".format(a_star))
-                my_f.write("cost: {} \n".format(cost))
-                my_f.write("---------------\n")
+            next_ob, reward, done, _ = self.env.step(action)
+            if record_transitions==True:
+                transitions.append([ob,action,reward,next_ob])
 
-            steps+= 1
-            total_reward += (reward - shift)
-            ob = next_ob
-            if done:
-                break
-
-
-
-
-
-            # action = self.policy.act(ob)
-            # next_ob, reward, done, _ = self.env.step(action)
-            # if record_transitions==True:
-            #     transitions.append([ob,action,reward,next_ob])
-
-            # # Constraints for linear safety layer
-            # if(next_ob[20]<-0.8 or next_ob[20]>0.8 ):
-            #     record_transitions=False                
+            # Constraints for linear safety layer
+            if( next_ob[20]>1 ):
+                record_transitions=False                
  
 
 
-            # steps += 1
-            # total_reward += (reward - shift)
-            # ob=next_ob
-            # if done:
-            #     break
+            steps += 1
+            total_reward += (reward - shift)
+            ob=next_ob
+            if done:
+                break
             
         return total_reward, steps, transitions
 
@@ -327,7 +301,7 @@ class ARSLearner(object):
             self.policy = BilayerPolicy(policy_params)
             self.w_policy = self.policy.get_weights()
         elif policy_params['type'] == 'bilayer_safe_explorer':
-            self.policy = SafeBilayerExplorerPolicy(policy_params,trained_weights='/home/harshit/work/ARS/trained_policies/Madras-explore2/safeQ_torch99.pt')
+            self.policy = SafeBilayerExplorerPolicy(policy_params)
             self.w_policy = self.policy.get_weights()
         else:
             raise NotImplementedError
@@ -416,7 +390,7 @@ class ARSLearner(object):
         
         # normalize rewards by their standard deviation
         if np.std(rollout_rewards)!=0:
-            rollout_rewards /= np.std(rollout_rewards)
+            rollout_rewards/= np.std(rollout_rewards)
 
         t1 = time.time()
         # aggregate rollouts to form g_hat, the gradient used to compute SGD step
@@ -461,10 +435,13 @@ class ARSLearner(object):
 
         # set up the costs for constraints
         next_state_np = next_state_np.reshape(next_state_np.shape[0],-1)
-        cost_next_state = np.asarray([100 if i[20]<=-0.8 or i[20]>=0.8  else 0 for i in next_state_np])
+        cost_next_state = np.asarray([i[20] for i in next_state_np])
+
+        #cost_next_state = np.asarray([100 if  i[20]>=0.8  else 0 for i in next_state_np])
         state_np = state_np.reshape(state_np.shape[0],-1)
         action_np = action_np.reshape(action_np.shape[0],-1)
-        cost_state = np.asarray([100 if i[20]<=-0.8 or i[20]>=0.8  else 0 for i in state_np])
+        cost_state = np.asarray([i[20] for i in state_np])
+        #cost_state = np.asarray([100 if  i[20]>=0.8  else 0 for i in state_np])
 
         transpose_action = self.policy.safeQ(state_batch)
 
@@ -492,8 +469,8 @@ class ARSLearner(object):
             
             t1 = time.time()
             self.train_step()
-            #for iter_ in range(10):
-                #self.update_explorer_net()
+            for iter_ in range(10):
+                self.update_explorer_net()
             t2 = time.time()
             print('total time of one step', t2 - t1)           
             print('iter ', i,' done')
@@ -501,10 +478,6 @@ class ARSLearner(object):
             #     np.savez(self.logdir + "/lin_policy_plus" + str(i), w) 
             # record statistics every 10 iterations
             if ((i + 1) % 20 == 0):
-                
-
-
-
                 rewards = self.aggregate_rollouts(num_rollouts = 30, evaluate = True)
                 print("SHAPE",rewards.shape)
                 if(np.mean(rewards)>max_reward_ever):
@@ -609,8 +582,8 @@ if __name__ == '__main__':
     parser.add_argument('--shift', type=float, default=1)
     parser.add_argument('--seed', type=int, default=237)
     parser.add_argument('--policy_type', type=str, default='linear')
-    parser.add_argument('--dir_path', type=str, default='trained_policies/Madras-explore6')
-    parser.add_argument('--logdir', type=str, default='trained_policies/Madras-explore6')
+    parser.add_argument('--dir_path', type=str, default='trained_policies/Madras-explore7')
+    parser.add_argument('--logdir', type=str, default='trained_policies/Madras-explore7')
 
     # for ARS V1 use filter = 'NoFilter'
     parser.add_argument('--filter', type=str, default='MeanStdFilter')

@@ -19,11 +19,13 @@ import socket
 from shared_noise import *
 import MADRaS
 import sys
+#f = open('logs_1.txt', 'w')
+#sys.stdout = f
+import sys
 import copy
 from collections import namedtuple
 from itertools import count
 from PIL import Image
-
 import torch
 import torch.nn as nn
 from torch.nn import Linear, Module, MSELoss
@@ -33,9 +35,9 @@ import torch.nn.functional as F
 import torchvision.transforms as T
 import math
 import random
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 
-#f = open('logs_1.txt', 'w')
-#sys.stdout = f
+
 Transition = namedtuple('Transition',('state', 'action', 'next_state', 'reward'))
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -58,6 +60,7 @@ class ReplayMemory(object):
 
     def __len__(self):
         return len(self.memory)
+
 
 
 @ray.remote
@@ -85,7 +88,7 @@ class Worker(object):
         self.env_name = env_name
         self.env = gym.make(env_name)
         self.env.seed(env_seed)
-        self.threshold=-200
+
         # each worker gets access to the shared noise table
         # with independent random streams for sampling
         # from the shared noise table. 
@@ -96,15 +99,9 @@ class Worker(object):
 
         elif policy_params['type'] == 'bilayer':
             self.policy = BilayerPolicy(policy_params)
-        elif policy_params['type'] == 'bilayer_safe':
-            self.policy = SafeBilayerPolicy(policy_params)
-        elif policy_params['type'] == 'bilayer_safe_discrete':
-            self.policy = SafeBilayerDiscretePolicy(policy_params)
-        
         elif policy_params['type'] == 'bilayer_safe_explorer':
-            self.policy = SafeBilayerExplorerPolicy(policy_params)
+            self.policy = SafeBilayerExplorerPolicy(policy_params,trained_weights='/home/harshit/work/ARS/trained_policies/Madras-explore7/safeQ_torch119.pt')
 
-        
         else:
             raise NotImplementedError
             
@@ -121,7 +118,7 @@ class Worker(object):
         """ 
         Get current policy weights and current statistics of past states.
         """
-        assert (self.policy_params['type'] == 'bilayer' or self.policy_params['type'] == 'bilayer_safe' or self.policy_params['type'] == 'bilayer_safe_discrete' or self.policy_params['type'] == 'bilayer_safe_explorer' or self.policy_params['type'] == 'linear')
+        assert (self.policy_params['type'] == 'bilayer' or self.policy_params['type'] == 'linear' or self.policy_params['type'] == 'bilayer_safe_explorer')
         return self.policy.get_weights_plus_stats()
     
 
@@ -136,94 +133,82 @@ class Worker(object):
 
         total_reward = 0.
         steps = 0
-        true_violations = 0
-        q_violations = 0
-
-        ob = self.env.reset()
-
+        my_f= open('Violations.txt','a')
         transitions = []
         record_transitions = True
-        my_f= open('hello.txt','a')
+        cost = 0
+        ob = self.env.reset()
         for i in range(rollout_length):
+            #my_f.write("{} \n".format(ob[20]))
+
+            weights = self.policy.getQ(ob)
             action = self.policy.act(ob)
-            
-            # Check and correct for action violations------------Phase 2
+            C = 0.8
+            # Solve the lagrangian
+            lagrangian = max(float(np.sum(weights*action) + ob[20] -C)/(np.sum(weights**2)),0)
+            #my_f.write("lagrangian: {} \n".format(lagrangian))
+            a_star = action - lagrangian*weights
+            next_ob, reward, done, _ = self.env.step(a_star)
+            cost=float(np.sum(weights*action)) + ob[20]
+            if(ob[20]>1):
+                my_f.write("Violated: \n")
+                my_f.write("Obs: {} \n".format(ob))        
+                my_f.write("action given: {} \n".format(action))     
+                my_f.write("action taken: {} \n".format(a_star))
+                my_f.write("cost: {} \n".format(cost))
+                my_f.write("weights: {} \n".format(weights))     
 
-            # weights = self.policy.safeQ(ob)
-            # C = 80
-            # # Solve the lagrangian
-            # lagrangian = max((weights.T.dot(action) + 0 -C)/(np.sum(weights**2)),0)
-            # a* = action - lagrangian*weights
-            # next_ob, reward, done, _ = self.env.step(a*)
-            # steps += 1
-            # total_reward += (reward - shift)
-            # ob = next_ob
-            # if done:
-            #     break
+                my_f.write("---------------\n")
 
-            #------------------------------------------------------
-
-            # Phase I learning safety function
-            #Add the constraint for Madras-v0 for now
-            my_f.write("{} \n".format(ob[2]))
-            next_ob, reward, done, _ = self.env.step(action)
-            if record_transitions==True:
-                transitions.append([ob,action,reward,next_ob])
-
-            # Constraints for linear safety layer
-            # if(next_ob[0]<-0.7 or next_ob[0]>0.7 ):
-            #     record_transitions=False   
-           
-
-
-            steps += 1
+            steps+= 1
             total_reward += (reward - shift)
             ob = next_ob
             if done:
                 break
 
+
+
+
+
+            # action = self.policy.act(ob)
+            # next_ob, reward, done, _ = self.env.step(action)
+            # if record_transitions==True:
+            #     transitions.append([ob,action,reward,next_ob])
+
+            # # Constraints for linear safety layer
+            # if(next_ob[20]<-0.8 or next_ob[20]>0.8 ):
+            #     record_transitions=False                
+ 
+
+
+            # steps += 1
+            # total_reward += (reward - shift)
+            # ob=next_ob
+            # if done:
+            #     break
             
-        return total_reward, steps,transitions,true_violations,q_violations
+        return total_reward, steps, transitions
 
-    def linesearch(self, delta, backtrack_ratio=0.2, num_backtracks=5):
+    def linesearch(self, delta, backtrack_ratio=0.5, num_backtracks=10):
         deltas = [delta]
-        # for i in range(int(num_backtracks)):
-        #     deltas.append(delta/((backtrack_ratio)**i))
-        #     deltas.insert(0,delta*((backtrack_ratio)**i))
+        # for i in range(num_backtracks/2):
+        #     deltas.append(delta*(backtrack_ratio)**i)
+        #     deltas.insert(0,delta/(backtrack_ratio)**i)
         return deltas
-
-    def print_threshold(self):
-        my_f = open("Thresholds.txt",'a')
-        my_f.write("{}".format(self.threshold))
-
-    def set_threshold(self, threshold):
-        self.threshold=threshold
-    
-    def get_threshold(self):
-        return self.threshold
-
-    def increase_threshold(self):
-        self.threshold+= 0.2*abs(self.threshold)
-
-    def decrease_threshold(self):
-        self.threshold-= 0.2*abs(self.threshold)
 
 
     def do_rollouts(self, w_policy, num_rollouts = 1, shift = 1, evaluate = False):
         """ 
         Generate multiple rollouts with a policy parametrized by w_policy.
         """
-
-        rollout_rewards, deltas_idx,deltas_ratio,num_episodes = [], [], [],[]
-        steps = 0
-        test_rewards = []
         all_transitions = []
-        true_violations = 0
-        q_violations = 0
+        rollout_rewards, deltas_idx = [], []
+        steps = 0
 
         for i in range(num_rollouts):
 
             if evaluate:
+                print("EVAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAL")
                 self.policy.update_weights(w_policy)
                 deltas_idx.append(-1)
                 
@@ -232,7 +217,7 @@ class Worker(object):
 
                 # for evaluation we do not shift the rewards (shift = 0) and we use the
                 # default rollout length (1000 for the MuJoCo locomotion tasks)
-                reward, r_steps, transitions,true_violations,q_violations = self.rollout(shift = 0., rollout_length = self.env.spec.timestep_limit)
+                reward, r_steps, transitions = self.rollout(shift = 0., rollout_length = self.env.spec.timestep_limit)
                 rollout_rewards.append(reward)
                 
             else:
@@ -241,75 +226,23 @@ class Worker(object):
                 delta = (self.delta_std * delta).reshape(w_policy.shape)
                 deltas_idx.append(idx)
 
-                # # set to true so that state statistics are updated 
-                # self.policy.update_filter = True
+                # set to true so that state statistics are updated 
+                self.policy.update_filter = True
 
-                # # compute reward and number of timesteps used for positive perturbation rollout
-                # self.policy.update_weights(w_policy + delta)
-                # pos_reward, pos_steps  = self.rollout(shift = shift)
-
-                # # compute reward and number of timesteps used for negative pertubation rollout
-                # self.policy.update_weights(w_policy - delta)
-                # neg_reward, neg_steps = self.rollout(shift = shift) 
-                # steps += pos_steps + neg_steps
-
-                # rollout_rewards.append([pos_reward, neg_reward])
-                deltas = self.linesearch(delta)
-                max_rollout_reward_diff=-np.inf
-                best_delta=delta
-                best_pos=0
-                best_neg=0
-                delta_ratio=1
-                
-                for i, delta_ in enumerate(deltas):
-                    self.policy.update_filter = True
-
-                    # compute reward and number of timesteps used for positive perturbation rollout
-                    self.policy.update_weights(w_policy + delta_)
-                    pos_reward, pos_steps,transitions,true_violations_,q_violations_  = self.rollout(shift = shift)
-                    all_transitions = all_transitions+transitions
-                    true_violations+=true_violations_
-                    q_violations+=q_violations_
-                    # compute reward and number of timesteps used for negative pertubation rollout
-                    self.policy.update_weights(w_policy - delta_)
-
-                    neg_reward, neg_steps,transitions,true_violations_,q_violations_ = self.rollout(shift = shift) 
-                    all_transitions=all_transitions+transitions
-                    true_violations+=true_violations_
-                    q_violations+=q_violations_
-
-                    steps += pos_steps + neg_steps
-                    test_rewards.append(max(pos_reward,neg_reward))
-                    if max_rollout_reward_diff<max(pos_reward,neg_reward):
-                        max_rollout_reward_diff=max(pos_reward,neg_reward)
-                        best_delta = delta_
-                        best_pos= pos_reward
-                        best_neg=neg_reward
-                        delta_ratio = best_delta/delta 
-
-                
-                # try weighted line search--------------------- works very bad
-                # test_rewards=np.asarray(test_rewards)
-                # best_delta = np.sum(np.multiply(np.asarray(deltas),test_rewards.reshape(-1,1)),axis=0)/np.sum(test_rewards)
-                # delta_ratio = best_delta/delta
-                # self.policy.update_filter = True
-
-                # # compute reward and number of timesteps used for positive perturbation rollout
-                # self.policy.update_weights(w_policy + best_delta)
-                # best_pos, pos_steps  = self.rollout(shift = shift)
-
-                # # compute reward and number of timesteps used for negative pertubation rollout
-                # self.policy.update_weights(w_policy - best_delta)
-                # best_neg, neg_steps = self.rollout(shift = shift) 
-                # steps += pos_steps + neg_steps 
-                #----------------------------------------------------
-
-                num_episodes.append([2*len(deltas)])
-                rollout_rewards.append([best_pos, best_neg])
-                deltas_ratio.append(delta_ratio)
+                # compute reward and number of timesteps used for positive perturbation rollout
+                self.policy.update_weights(w_policy + delta)
+                pos_reward, pos_steps, transitions  = self.rollout(shift = shift)
+                all_transitions = all_transitions+transitions
 
 
-        return {'deltas_idx': deltas_idx,'deltas_ratio':deltas_ratio, 'rollout_rewards': rollout_rewards, "steps" : steps,"num_episodes":num_episodes,"test_rewards":test_rewards, "transitions":all_transitions,"true_violations":true_violations,"q_violations":q_violations}
+                # compute reward and number of timesteps used for negative pertubation rollout
+                self.policy.update_weights(w_policy - delta)
+                neg_reward, neg_steps, transitions = self.rollout(shift = shift) 
+                steps += pos_steps + neg_steps
+                all_transitions = all_transitions+transitions
+                rollout_rewards.append([pos_reward, neg_reward])
+                            
+        return {'deltas_idx': deltas_idx, 'rollout_rewards': rollout_rewards, "steps" : steps, "transitions":all_transitions}
     
     def stats_increment(self):
         self.policy.observation_filter.stats_increment()
@@ -361,15 +294,15 @@ class ARSLearner(object):
         self.shift = shift
         self.params = params
         self.max_past_avg_reward = float('-inf')
-        self.num_episodes_used = 0
-        self.replay_buffer=np.asarray([])
-        self.MEMORY = 1000000
+        self.num_episodes_used = float('inf')
 
         # Parameters for Q Learner
         self.memory = ReplayMemory(10000)
         self.BATCH_SIZE = 128
         self.GAMMA = 0.999
         self.TARGET_UPDATE = 5
+
+
 
         
         # create shared table for storing noise
@@ -388,6 +321,7 @@ class ARSLearner(object):
                                       rollout_length=rollout_length,
                                       delta_std=delta_std) for i in range(num_workers)]
 
+        print(self.workers[0])
         # initialize policy 
         if policy_params['type'] == 'linear':
             self.policy = LinearPolicy(policy_params)
@@ -395,30 +329,15 @@ class ARSLearner(object):
         elif policy_params['type'] == 'bilayer':
             self.policy = BilayerPolicy(policy_params)
             self.w_policy = self.policy.get_weights()
-        elif policy_params['type'] == 'bilayer_safe':
-            self.policy = SafeBilayerPolicy(policy_params)
-            self.w_policy = self.policy.get_weights()
-        elif policy_params['type'] == 'bilayer_safe_discrete':
-            self.policy = SafeBilayerDiscretePolicy(policy_params)
-            self.w_policy = self.policy.get_weights()
         elif policy_params['type'] == 'bilayer_safe_explorer':
-            self.policy = SafeBilayerExplorerPolicy(policy_params)
+            self.policy = SafeBilayerExplorerPolicy(policy_params,trained_weights='/home/harshit/work/ARS/trained_policies/Madras-explore7/safeQ_torch119.pt')
             self.w_policy = self.policy.get_weights()
-
         else:
             raise NotImplementedError
             
         # initialize optimization algorithm
         self.optimizer = optimizers.SGD(self.w_policy, self.step_size)        
         print("Initialization of ARS complete.")
-
-    
-    def update_replay_buffer(self,transitions):
-        if(self.MEMORY-self.replay_buffer.shape[0]>transitions.shape[0]):
-            np.append(self.replay_buffer,transitions)
-        elif(transitions.shape[0] - (self.MEMORY-self.replay_buffer.shape[0])):
-            self.replay_buffer = self.replay_buffer[transitions.shape[0] - (self.MEMORY-self.replay_buffer.shape[0]):,:]
-            np.append(self.replay_buffer,transitions)
 
     def aggregate_rollouts(self, num_rollouts = None, evaluate = False):
         """ 
@@ -454,44 +373,33 @@ class ARSLearner(object):
         results_one = ray.get(rollout_ids_one)
         results_two = ray.get(rollout_ids_two)
 
-        rollout_rewards, deltas_idx, deltas_ratio,num_episodes = [], [], [],[] 
-
-        test_rewards=[]
+        rollout_rewards, deltas_idx = [], [] 
         all_transitions = []
-        true_violations=0
-        q_violations=0
+
         for result in results_one:
             if not evaluate:
                 self.timesteps += result["steps"]
             deltas_idx += result['deltas_idx']
-            deltas_ratio += result['deltas_ratio']
             rollout_rewards += result['rollout_rewards']
-            num_episodes+=result['num_episodes']
-            test_rewards.append([result['test_rewards']])
             all_transitions+=result['transitions']
-            q_violations+=result['q_violations']
-            true_violations+=result['true_violations']
+
 
         for result in results_two:
             if not evaluate:
                 self.timesteps += result["steps"]
             deltas_idx += result['deltas_idx']
-            deltas_ratio += result['deltas_ratio']
             rollout_rewards += result['rollout_rewards']
-            num_episodes+=result['num_episodes']
-            test_rewards.append([result['test_rewards']])
             all_transitions+=result['transitions']
-            q_violations+=result['q_violations']
-            true_violations+=result['true_violations']
 
-        # self.update_replay_buffer(all_transitions)
-        #print(test_rewards)
+        deltas_idx = np.array(deltas_idx)
+        rollout_rewards = np.array(rollout_rewards, dtype = np.float64)
+        
+
+        # Push all the transitions collected in the Replay Buffer
         for tran in all_transitions:
             self.memory.push(torch.from_numpy(tran[0]).unsqueeze(0).to(device).float(),torch.tensor([[tran[1]]],device=device, dtype=torch.long),torch.from_numpy(tran[3]).unsqueeze(0).float().to(device),torch.tensor([tran[2]],device=device))
 
-        deltas_idx = np.array(deltas_idx)
-        deltas_ratio = np.array(deltas_ratio)
-        rollout_rewards = np.array(rollout_rewards, dtype = np.float64)
+
         print('Maximum reward of collected rollouts:', rollout_rewards.max())
         t2 = time.time()
 
@@ -499,35 +407,6 @@ class ARSLearner(object):
 
         if evaluate:
             return rollout_rewards
-        #print(deltas_ratio)
-        print('-------------')
-        #print(rollout_rewards)
-        self.num_episodes_used+=np.sum(np.asarray(num_episodes))
-
-
-
-        print(rollout_rewards)
-
-        # Curriculum for threshold so that initialization bias in removed from the Q function
-        # if(true_violations<q_violations):
-        #     print("q_violations exceed true_violations")
-        #     rollout_ids_one_ = [worker.decrease_threshold.remote() for worker in self.workers]
-        #     rollout_ids_two_ = [worker.decrease_threshold.remote() for worker in self.workers[:(num_deltas % self.num_workers)]]
-
-        # elif(q_violations<true_violations):
-        #     print("True violations exceed q_violations")
-
-        #     rollout_ids_one_ = [worker.increase_threshold.remote() for worker in self.workers]
-
-        #     rollout_ids_two_ = [worker.increase_threshold.remote()  for worker in self.workers[:(num_deltas % self.num_workers)]]
-
-
-
-
-        # self.workers[0].print_threshold.remote() 
-
-
-
 
         # select top performing directions if deltas_used < num_deltas
         max_rewards = np.max(rollout_rewards, axis = 1)
@@ -536,7 +415,6 @@ class ARSLearner(object):
             
         idx = np.arange(max_rewards.size)[max_rewards >= np.percentile(max_rewards, 100*(1 - (self.deltas_used / self.num_deltas)))]
         deltas_idx = deltas_idx[idx]
-        deltas_ratio=deltas_ratio[idx]
         rollout_rewards = rollout_rewards[idx,:]
         
         # normalize rewards by their standard deviation
@@ -546,8 +424,8 @@ class ARSLearner(object):
         t1 = time.time()
         # aggregate rollouts to form g_hat, the gradient used to compute SGD step
         g_hat, count = utils.batched_weighted_sum(rollout_rewards[:,0] - rollout_rewards[:,1],
-                                                  (self.deltas.get_mod(idx, self.w_policy.size, ratio)
-                                                   for idx, ratio in zip(deltas_idx, deltas_ratio)),
+                                                  (self.deltas.get(idx, self.w_policy.size)
+                                                   for idx in deltas_idx),
                                                   batch_size = 500)
         g_hat /= deltas_idx.size
         t2 = time.time()
@@ -565,43 +443,6 @@ class ARSLearner(object):
         self.w_policy -= self.optimizer._compute_step(g_hat).reshape(self.w_policy.shape)
         self.policy.update_weights(self.w_policy)
         return
-
-    def update_safety_net(self):
-
-        if len(self.memory) < self.BATCH_SIZE:
-            return
-        transitions = self.memory.sample(self.BATCH_SIZE)
-        batch = Transition(*zip(*transitions))
-
-        non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
-                                            batch.next_state)), device=device, dtype=torch.uint8)
-        non_final_next_states = torch.cat([s for s in batch.next_state
-                                                    if s is not None])
-        state_batch = torch.cat(batch.state)
-
-
-        action_batch = torch.cat(batch.action)
-        reward_batch = torch.cat(batch.reward)
-        # print(state_batch.size())
-        # print(action_batch.size())
-        #print(self.policy.safeQ(state_batch))
-        state_action_values = self.policy.safeQ(state_batch).gather(1, action_batch)
-
-        next_state_values = torch.zeros(self.BATCH_SIZE, device=device)
-        next_state_values[non_final_mask] = self.policy.target_net(non_final_next_states).max(1)[0].detach()
-        # Compute the expected Q values
-        expected_state_action_values = (next_state_values * self.GAMMA) + reward_batch
-
-        # Compute Huber loss
-        loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
-
-        # Optimize the model
-        self.policy.optimizer.zero_grad()
-        loss.backward()
-        for param in self.policy.safeQ.parameters():
-            param.grad.data.clamp_(-1, 1)
-        self.policy.optimizer.step()
-
 
     def update_explorer_net(self):
         if len(self.memory) < self.BATCH_SIZE:
@@ -621,16 +462,16 @@ class ARSLearner(object):
         next_state_np = np.asarray([i.cpu().numpy() for i in batch.next_state])
 
 
-   
+        # set up the costs for constraints
         next_state_np = next_state_np.reshape(next_state_np.shape[0],-1)
-        cost_next_state = np.asarray([100 if i[0]<=-0.7 or i[0]>=0.7  else 0 for i in next_state_np])
+        cost_next_state = np.asarray([100 if i[20]<=-0.8 or i[20]>=0.8  else 0 for i in next_state_np])
         state_np = state_np.reshape(state_np.shape[0],-1)
         action_np = action_np.reshape(action_np.shape[0],-1)
-        cost_state = np.asarray([100 if i[0]<=-0.7 else 0 for i in state_np])
+        cost_state = np.asarray([100 if i[20]<=-0.8 or i[20]>=0.8  else 0 for i in state_np])
 
-        weights = self.policy.safeQ(state_batch)
+        transpose_action = self.policy.safeQ(state_batch)
 
-        mul = torch.mul(weights,torch.from_numpy(action_np).to(device).float())
+        mul = torch.mul(transpose_action,torch.from_numpy(action_np).to(device).float())
         mul = torch.sum(mul,dim=1)
         # print(mul.size())
         # print(torch.from_numpy(cost_state).to(device).float().size())
@@ -647,23 +488,15 @@ class ARSLearner(object):
         self.policy.optimizer.step()
 
 
-
-
-
     def train(self, num_iter):
         max_reward_ever=-1
         start = time.time()
-        actual_reward_list = []
-        num_episodes_till_now =[]
         for i in range(num_iter):
             
             t1 = time.time()
             self.train_step()
-            for iter_ in range(10):
-                self.update_explorer_net()
-            # if i % self.TARGET_UPDATE == 0:
-            #     self.policy.target_net.load_state_dict(self.policy.safeQ.state_dict())
-           
+            #for iter_ in range(10):
+                #self.update_explorer_net()
             t2 = time.time()
             print('total time of one step', t2 - t1)           
             print('iter ', i,' done')
@@ -672,19 +505,24 @@ class ARSLearner(object):
             # record statistics every 10 iterations
             if ((i + 1) % 20 == 0):
                 
+
+
+
                 rewards = self.aggregate_rollouts(num_rollouts = 30, evaluate = True)
-                actual_reward_list.append(np.mean(rewards))
-                num_episodes_till_now.append(copy.copy(self.num_episodes_used))
                 print("SHAPE",rewards.shape)
                 if(np.mean(rewards)>max_reward_ever):
                     max_reward_ever=np.mean(rewards)
                 #     np.savez(self.logdir + "/lin_policy_plus", w)
 
                 w = ray.get(self.workers[0].get_weights_plus_stats.remote())
+
                 np.savez(self.logdir + "/bi_policy_num_plus" + str(i), w)
                 torch.save(self.policy.net.state_dict(),self.logdir + "/bi_policy_num_plus_torch" + str(i)+ ".pt")
                 torch.save(self.policy.safeQ.state_dict(),self.logdir + "/safeQ_torch" + str(i)+ ".pt")
 
+
+                # np.savez(self.logdir + "/bi_policy_num_plus" + str(i), w)
+                # torch.save(self.policy.net.state_dict(),self.logdir + "/bi_policy_num_plus_torch" + str(i)+ ".pt")
                 print(sorted(self.params.items()))
                 logz.log_tabular("Time", time.time() - start)
                 logz.log_tabular("Iteration", i + 1)
@@ -715,10 +553,6 @@ class ARSLearner(object):
             ray.get(increment_filters_ids)            
             t2 = time.time()
             print('Time to sync statistics:', t2 - t1)
-
-        np.savez(self.logdir + "/final_reward_array",np.asarray(actual_reward_list))
-        np.savez(self.logdir + "/final_episode_array",np.asarray(num_episodes_till_now))
-        # utils.plot_info({'rewards':[num_episodes_till_now,actual_reward_list,'Episodes','Average Rewards']},self.logdir)
                         
         return 
 
@@ -741,8 +575,6 @@ def run_ars(params):
                    'ob_filter':params['filter'],
                    'ob_dim':ob_dim,
                    'ac_dim':ac_dim}
-
-    
 
     ARS = ARSLearner(env_name=params['env_name'],
                      policy_params=policy_params,
@@ -771,22 +603,20 @@ if __name__ == '__main__':
     parser.add_argument('--deltas_used', '-du', type=int, default=8)
     parser.add_argument('--step_size', '-s', type=float, default=0.02)
     parser.add_argument('--delta_std', '-std', type=float, default=.03)
-    parser.add_argument('--n_workers', '-e', type=int, default=12)
-    parser.add_argument('--rollout_length', '-r', type=int, default=1000)
+    parser.add_argument('--n_workers', '-e', type=int, default=6)
+    parser.add_argument('--rollout_length', '-r', type=int, default=5000)
 
     # for Swimmer-v1 and HalfCheetah-v1 use shift = 0
     # for Hopper-v1, Walker2d-v1, and Ant-v1 use shift = 1
     # for Humanoid-v1 used shift = 5
     parser.add_argument('--shift', type=float, default=1)
     parser.add_argument('--seed', type=int, default=237)
-    parser.add_argument('--policy_type', type=str, default='bilayer_safe_explorer')
-    parser.add_argument('--dir_path', type=str, default='trained_policies/Madras-explore')
-    parser.add_argument('--logdir', type=str, default='trained_policies/Madras-explore')
+    parser.add_argument('--policy_type', type=str, default='linear')
+    parser.add_argument('--dir_path', type=str, default='trained_policies/Madras-explore8')
+    parser.add_argument('--logdir', type=str, default='trained_policies/Madras-explore8')
 
     # for ARS V1 use filter = 'NoFilter'
     parser.add_argument('--filter', type=str, default='MeanStdFilter')
-
-
 
     local_ip = socket.gethostbyname(socket.gethostname())
     ray.init(redis_address="10.32.6.37:6382")

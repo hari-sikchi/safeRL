@@ -50,10 +50,10 @@ def configure_output_dir(d=None):
     G.log_headers = []
     G.log_current_row = {}
     
-    G.output_dir = d or "/tmp/experiments/%i"%int(time.time())
+    G.output_dir = d 
     if not osp.exists(G.output_dir):
         os.makedirs(G.output_dir)
-    G.output_file = open(osp.join(G.output_dir, "log.txt"), 'w')
+    G.output_file = open(osp.join(G.output_dir, "log1.txt"), 'w')
     atexit.register(G.output_file.close)
     print(colorize("Logging data to %s"%G.output_file.name, 'green', bold=True))
 

@@ -2,6 +2,7 @@
 # https://github.com/openai/evolution-strategies-starter.
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 def itergroups(items, group_size):
     assert group_size >= 1
@@ -26,3 +27,19 @@ def batched_weighted_sum(weights, vecs, batch_size):
                         np.asarray(batch_vecs, dtype=np.float64))
         num_items_summed += len(batch_weights)
     return total, num_items_summed
+
+def plot_info(param_dict, logdir):
+    for key, value in param_dict.items():
+        x = value[0]
+        y = value[1]
+        x_name = value[2]
+        y_name = value[3]
+        print(x,y)
+        plt.plot(x, y)
+        plt.title(key)
+        plt.xlabel(x_name)
+        plt.ylabel(y_name)
+        plt.savefig((logdir + "/plot_"  +key + ".png"))
+        plt.clf()
+
+

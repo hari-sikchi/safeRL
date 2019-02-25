@@ -27,9 +27,19 @@ class SharedNoiseTable(object):
     def get(self, i, dim):
         return self.noise[i:i + dim]
 
+    def get_mod(self, i, dim,ratio):
+        return ratio*self.noise[i:i + dim]
+
+
     def sample_index(self, dim):
         return self.rg.randint(0, len(self.noise) - dim + 1)
 
     def get_delta(self, dim):
         idx = self.sample_index(dim)
         return idx, self.get(idx, dim)
+
+
+    def get_delta_mod(self, dim,ratio):
+        idx = self.sample_index(dim)
+        return idx, ratio*self.get(idx, dim)
+
