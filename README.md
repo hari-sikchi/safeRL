@@ -1,16 +1,5 @@
 # Safe Reinforcement Learning Algorithms   
-=================
 
-<!--ts-->
-   * [HCOPE](#hcope)
-   * [Safe Exploration](#safe_exploration)
-   * [Off Policy Evaluation](#importance_sampling)
-<!--te-->
-
-
-
-
-<a name="hcope"></a>
 ## HCOPE (High-Confidence Off-Policy Evaluation.)
 
 
@@ -54,7 +43,7 @@ method. Also, a graph of distribution of Importance sampling ratio is created wh
 Output format: 
 ![Output](https://github.com/hari-sikchi/safeRL/blob/master/results/Result.png)   
 
-<a name="safe_exploration"></a>
+
 ## Safe exploration in continuous action spaces.
 
 Paper: Safe Exploration in Continuous Action Spaces - Dalal et al.
@@ -76,7 +65,7 @@ This enables agent to learn while following the safety constraints.
 
 ![Safe Exploration](https://github.com/hari-sikchi/safeRL/blob/master/results/safe_actions.gif)
 
-* Instability is observed in safe exploration using this method. Here constraint is activated going left through the center of the road.(0.3)   
+* Instability is observed in safe exploration using this method.   
 
 ![Unstability due to Safe Exploration](https://github.com/hari-sikchi/safeRL/blob/master/results/safe_actions_instability.gif)   
 
@@ -100,7 +89,7 @@ This enables agent to learn while following the safety constraints.
 
 
 
-<a name="importance_sampling"></a>
+
 ## Importance Sampling
 
 Implementation of:    
@@ -112,7 +101,7 @@ Implementation of:
 * Consistent Weighted Per-Decision Importance Sampling (CWPDIS) Estimator   
     
 Comparision of different importance sampling estimators:   
-![Different Importance sampling estimators](https://github.com/hari-sikchi/HCOPE/blob/master/importance_sampling/importance_sampling.png)   
+![Different Importance sampling estimators](https://github.com/hari-sikchi/HCOPE/blob/master/importance_sampling/results/importance_sampling.png)   
 
  Image is taken from phD thesis of P.Thomas:    
  Links: https://people.cs.umass.edu/~pthomas/papers/Thomas2015c.pdf   
