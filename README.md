@@ -5,6 +5,7 @@
    * [HCOPE](#hcope)
    * [Safe Exploration](#safe_exploration)
    * [Off Policy Evaluation](#importance_sampling)
+   * [Solving side effects](#side_effects)
 <!--te-->
 
 
@@ -117,3 +118,11 @@ Comparision of different importance sampling estimators:
  Image is taken from phD thesis of P.Thomas:    
  Links: https://people.cs.umass.edu/~pthomas/papers/Thomas2015c.pdf   
 
+
+   
+## Penalizing side effects using relative reachability
+
+* Added a simple example for calculating side effects as given towards the end of paper
+
+    
+ Paper: Penalizing side effects using stepwise relative reachability - Krakovna et al.
