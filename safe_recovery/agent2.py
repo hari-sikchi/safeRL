@@ -284,12 +284,15 @@ def learn(network,
                 # of the environments, so resetting here instead
                 agent.reset()
                 recovery_agent.reset()
+            
+            count = 0
             for t_rollout in range(nb_rollout_steps):
 
-
+                count+=1
                 # If you are in diaster free zone
 
-                if(obs[0,20]<=0.8 and obs[0,20]>=-0.8 ):
+                if(1):
+                #if(obs[0,20]<=0.8 and obs[0,20]>=-0.8 ):
 
 
                     # Predict next action.
@@ -303,14 +306,15 @@ def learn(network,
                     # max_action is of dimension A, whereas action is dimension (nenvs, A) - the multiplication gets broadcasted to the batch
                     new_obs, r, done, info = env.step((max_action * action))  # scale for execution in env (as far as DDPG is concerned, every action is in [-1, 1])
                     # note these outputs are batched from vecenv
-
+                    episode_reward+=r
 
                     t += 1
                     if rank == 0 and render:
                         env.render()
-                    episode_reward += r
+                    #episode_reward += r
                     episode_step += 1
-
+                    # if (count%1==0):
+                    #     print("Main policy | Reward: {}, Cum Reward: {}".format(r,episode_reward))
                     # Book-keeping.
                     epoch_actions.append(action)
                     epoch_qs.append(q)
@@ -335,7 +339,7 @@ def learn(network,
                     # Predict next action.
 
                     action, q, _, _ = recovery_agent.step(obs, apply_noise=True, compute_Q=True)
-
+                    #episode_reward+=r
                     # Execute next action.
                     if rank == 0 and render:
                         env.render()
@@ -355,6 +359,9 @@ def learn(network,
                         env.render()
                     episode_reward += r
                     episode_step += 1
+                    # if (count%1==0):
+                    #     print(">>>>>>>Recovery policy | Reward: {}, Cum Reward: {}".format(r,episode_reward))
+
 
                     # Book-keeping.
                     epoch_actions.append(action)
@@ -383,6 +390,7 @@ def learn(network,
                 for d in range(len(done)):
                     if done[d]:
                         # Episode done.
+                        print("Episode reward: {}".format(np.sum(episode_reward)))
                         epoch_episode_rewards.append(episode_reward[d])
                         episode_rewards_history.append(episode_reward[d])
                         epoch_episode_steps.append(episode_step[d])
