@@ -1,5 +1,6 @@
 # Safe Reinforcement Learning Algorithms   
-=================
+
+***
 
 <!--ts-->
    * [HCOPE](#hcope)
