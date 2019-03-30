@@ -9,7 +9,7 @@
 <!--te-->
 
 
-
+***
 
 <a name="hcope"></a>
 ## HCOPE (High-Confidence Off-Policy Evaluation.)
@@ -55,6 +55,8 @@ method. Also, a graph of distribution of Importance sampling ratio is created wh
 Output format: 
 ![Output](https://github.com/hari-sikchi/safeRL/blob/master/results/Result.png)   
 
+***
+
 <a name="safe_exploration"></a>
 ## Safe exploration in continuous action spaces.
 
@@ -99,7 +101,7 @@ This enables agent to learn while following the safety constraints.
 ![Action Correction](https://github.com/hari-sikchi/safeRL/blob/master/results/safety_optimization.png)   
 
 
-
+***
 
 <a name="importance_sampling"></a>
 ## Importance Sampling
@@ -119,10 +121,24 @@ Comparision of different importance sampling estimators:
  Links: https://people.cs.umass.edu/~pthomas/papers/Thomas2015c.pdf   
 
 
-   
-## Penalizing side effects using relative reachability
+<a name="side_effects"></a>
+
+
+*** 
+ 
+## Side Effects
+### Penalizing side effects using relative reachability   
+
+Code - https://github.com/hari-sikchi/safeRL/tree/safe_recovery/side_effects    
+
 
 * Added a simple example for calculating side effects as given towards the end of paper
+![Environment](https://github.com/hari-sikchi/safeRL/blob/safe_recovery/side_effects/env.png)   
+
+The relative reachability measure    
+![Equation relative reachability](https://github.com/hari-sikchi/safeRL/blob/safe_recovery/side_effects/rr.png)   
+
+
 
     
  Paper: Penalizing side effects using stepwise relative reachability - Krakovna et al.
