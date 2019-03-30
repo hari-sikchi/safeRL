@@ -134,7 +134,7 @@ def learn(network,
           reward_scale=1.0,
           render=False,
           render_eval=False,
-          noise_type='ou_0.2',
+          noise_type='adaptive-param_0.2',
           normalize_returns=False,
           normalize_observations=False,
           critic_l2_reg=1e-2,
@@ -289,7 +289,7 @@ def learn(network,
 
                 # If you are in diaster free zone
 
-                if(obs[0,20]<0.8 and obs[0,20]>-0.8 ):
+                if(obs[0,20]<=0.8 and obs[0,20]>=-0.8 ):
 
 
                     # Predict next action.
@@ -390,7 +390,7 @@ def learn(network,
                         episode_step[d] = 0
                         epoch_episodes += 1
                         episodes += 1
-                        if epoch%1==0:
+                        if epoch%10==0:
                             logger.info('saving model...')
                             saver.save(sess, 'saved_models/my_model', global_step=epoch)
 

@@ -1,3 +1,8 @@
+safe_recovery/saved_models/
+safe_recovery/logging/
+safe_recovery/output/
+
+
 *.o
 *.pyc
 
