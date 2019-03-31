@@ -7,8 +7,8 @@ sys.path.append('/home/harshit/work/safe-grid-gym')
 import safe_grid_gym
 import gym
 
-
-
+# Beta is the tradeoff between real reward and the reachability reward
+beta = 3 
 env = gym.make("SideEffectsSokoban-v0")
 
 action_space = env.action_space
@@ -53,21 +53,67 @@ def update_reachability(reachability_list):
                     insert_rl(reachability_list,[reachability_list[i][0],reachability_list[j][1],reachability_list[i][2]+reachability_list[j][2]])
 
 
+def compute_relative_reachability(state1,state2,reachability_list):
 
-def sample_episodes(horizon = 10):
+    sum1 = 0
+    sum2 = 0
+    gamma = 0.9
+    count1=0
+    count2=0
+    for i in reachability_list:
+        if(np.array_equal(i[0],state1)):
+            sum1+=gamma**i[2]
+            count1+=1
+        if(np.array_equal(i[0],state2)):
+            sum2+=gamma**i[2]
+            count2+=1
+        
+    if(count1!=0):
+        reach1 = sum1/count1
+    else:
+        reach1=0
+    if(count2!=0):
+        reach2 = sum2/count2
+    else:
+        reach2=0
+
+    rel_reach = max(reach1-reach2,0)
+
+
+    return (rel_reach)
+
+
+
+def sample_episodes(q_table,reachability_list,horizon = 10,epsilon=0.8):
     transitions = []
     obs = env.reset()
-    print("-------")
     for timestep in range(horizon):
-        # if np.random.random()<epsilon:
-        #     action = np.argmax(q_table[int(E_rev[obs]),:])
-        #     action_str = E_a[str(action)]
-        # else:
-        action = action_space.sample()
-        action_t=action
-        # action = np.random.randint(0,len(actions))
-        # action_t = actions[action]
-        next_state,reward,done,info = env.step(action_t)
+        if np.random.random()<epsilon:
+            action = np.argmax(q_table[int(enumerate_state(obs)),:])
+        else:
+            action = action_space.sample()
+
+        next_state,reward,done,info = env.step(action)
+
+
+        surrogate_reward = reward + beta * compute_relative_reachability(obs,next_state,reachability_list)
+
+        transitions.append([obs,action,reward,next_state])
+        obs = next_state
+
+    return transitions
+
+
+def sample_episodes_evaluate(q_table,reachability_list,horizon = 10,epsilon=0.8):
+    transitions = []
+    obs = env.reset()
+    for timestep in range(horizon):
+        action = np.argmax(q_table[int(enumerate_state(obs)),:])
+        print(action)
+        next_state,reward,done,info = env.step(action)
+
+
+        surrogate_reward = reward + beta * compute_relative_reachability(obs,next_state,reachability_list)
 
         transitions.append([obs,action,reward,next_state])
         obs = next_state
@@ -76,14 +122,65 @@ def sample_episodes(horizon = 10):
 
 
 
-if __name__=="__main__":
+
+def enumerate_state(state):
+    count = 0
+    for i in range(state.shape[0]):
+        for j in range(state.shape[1]):
+            count+=1
+            if (state[0,i,j]==2):
+                break
+
+    count*=10
+    count2=0
+    for i in range(state.shape[0]):
+        for j in range(state.shape[1]):
+            count2+=1
+            if (state[0,i,j]==4):
+                break
+
+    return count2+count
+
+
+
+def q_learning():
+    n_states = 200
+    n_actions = 4
+    q_table = np.zeros((n_states,n_actions))
+    alpha = 0.8
+    n_episodes = 200
+    gamma = 0.9
     reachability_list= []
 
-    for i in range(100):
-        transitions = sample_episodes()
+    for i in range(n_episodes):
+        transitions = sample_episodes(q_table,reachability_list)
         insert_transitions(reachability_list,transitions)
         update_reachability(reachability_list)
-        print("Iter: {}, Length: {}".format(i,len(reachability_list)))
+
+        for transition in transitions:
+            q_table[enumerate_state(transition[0])][transition[1]] = alpha*q_table[enumerate_state(transition[0]),transition[1]] + (1-alpha)*(transition[2]+gamma*np.max(q_table[int(enumerate_state(transition[3])),:]))
+
+        print('Episodes: {}, Reachability Length: {}'.format(i,len(reachability_list)))
+
+    print("Learnt Q table")
+
+    print(q_table)
+
+    # Evaluate
+    sample_episodes_evaluate(q_table,reachability_list)
+
+
+
+
+
+if __name__=="__main__":
+    q_learning()
+
+    # for i in range(100):
+    #     transitions = sample_episodes(reachability_list)
+    #     insert_transitions(reachability_list,transitions)
+    #     update_reachability(reachability_list)
+    #     print("Iter: {}, Length: {}".format(i,len(reachability_list)))
 
 
 
