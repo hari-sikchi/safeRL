@@ -291,8 +291,8 @@ def learn(network,
                 count+=1
                 # If you are in diaster free zone
 
-                if(1):
-                #if(obs[0,20]<=0.8 and obs[0,20]>=-0.8 ):
+                #if(1):
+                if(obs[0,20]<=0.8 and obs[0,20]>=-0.8 ):
 
 
                     # Predict next action.
@@ -391,6 +391,7 @@ def learn(network,
                     if done[d]:
                         # Episode done.
                         print("Episode reward: {}".format(np.sum(episode_reward)))
+                        logger.info("Episode reward: {}".format(np.sum(episode_reward)))
                         epoch_episode_rewards.append(episode_reward[d])
                         episode_rewards_history.append(episode_reward[d])
                         epoch_episode_steps.append(episode_step[d])
