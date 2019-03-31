@@ -1,3 +1,11 @@
+safe_recovery/output
+safe_recovery/logging
+safe_recovery/saved_models
+safe_recovery/old_policies
+
+
+
+
 *.o
 *.pyc
 
