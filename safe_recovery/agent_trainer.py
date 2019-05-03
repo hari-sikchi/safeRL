@@ -4,6 +4,9 @@ import tensorflow as tf
 import numpy as np
 from collections import deque
 import pickle
+from munch import Munch
+
+import MADRaS
 
 import baselines.common.tf_util as U
 from baselines.common import set_global_seeds
@@ -25,13 +28,14 @@ except ImportError:
 def yaml_loader(filepath):
     with open(filepath, 'r') as f:
         data = yaml.load(f)
-        return data
+        return Munch(data)
 
 
 class Trainer(Agent):
     def __init__(self):
         self.env = make_vec_env('Madras-v0', 'madras', 1, 7)
         self.config = yaml_loader(CONFIG_FILE)
+        self.set_up_MPI()
         self.create_agent(self.env, self.config, training=True)
 
     def save_model(self, epoch):
@@ -260,3 +264,9 @@ class Trainer(Agent):
             self.MPI_rank = 0
             self.MPI_size = 1
 
+def main():
+    trainer = Trainer()
+    trainer.run_training()
+
+if __name__=='__main__':
+    main()
