@@ -22,7 +22,7 @@ import queue
 import yaml
 import random
 from copy import deepcopy
-sys.path.append('/home/harshit/work/baselines/')
+sys.path.append('/baselines/')
 
 import MADRaS
 from recovery_utils import *
@@ -315,6 +315,8 @@ def learn(network,
                     
                     # max_action is of dimension A, whereas action is dimension (nenvs, A) - the multiplication gets broadcasted to the batch
                     new_obs, r, done, info = env.step((max_action * action))  # scale for execution in env (as far as DDPG is concerned, every action is in [-1, 1])
+                    if (new_obs[0,20]>0.8 and new_obs[0,20]<-0.8):
+                        r += -100
                     # note these outputs are batched from vecenv
                     episode_reward+=r
 

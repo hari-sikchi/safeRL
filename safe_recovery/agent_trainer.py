@@ -28,7 +28,7 @@ def yaml_loader(filepath):
         return data
 
 
-class AgentTrainer(Agent):
+class Trainer(Agent):
     def __init__(self):
         self.env = make_vec_env('Madras-v0', 'madras', 1, 7)
         self.config = yaml_loader(CONFIG_FILE)
@@ -61,7 +61,8 @@ class AgentTrainer(Agent):
                 new_obs, r, done, _ = self.env.step((max_action * action))  # scale for execution in env (as far as DDPG is concerned, every action is in [-1, 1])
                 # note these outputs are batched from vecenv
 
-                # TODO(@hari-sikchi): if not self.is_safe(new_obs): r -= 1000
+                if not self.is_safe(new_obs):
+                    r -= 1000
 
                 episode_reward+=r
                 episode_step += 1
@@ -258,3 +259,4 @@ class AgentTrainer(Agent):
         else:
             self.MPI_rank = 0
             self.MPI_size = 1
+
