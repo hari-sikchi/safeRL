@@ -1,4 +1,8 @@
 ---
+# Training mode
+recovery_mode: True
+
+# General parameters
 render: False
 network: 'mlp'
 replay_memory_size: 1000000
@@ -10,24 +14,24 @@ reward_scale: 1.0
 batch_size: 64
 critic_l2_reg: 0.01
 actor_lr: 0.0001
-critic_lr: 0.001
+critic_lr: 0.0001
 normalize_returns: false
 normalize_observations: false
 popart: false
 clip_norm:
-num_epochs: 500
+num_epochs: 2000
 num_cycles_per_epoch: 1
-num_train_steps_per_cycle: 50
-num_rollout_steps: 5000
+num_train_steps_per_cycle: 1  # originally 50 -- no idea why, maybe because of adap-param noise
+max_rollout_steps: 5000
 param_noise_adaption_interval: 50
 save_freq: 10
-logtostdout_freq: 100
+logtostdout_freq: 10
 do_eval: false
 eval_freq: 10
 
 # noise params
-random_seed: 7
-noise_type: 'adaptive-param'
+random_seed: 701
+noise_type: 'ou'
 noise_std: 0.2
 
 # save params
