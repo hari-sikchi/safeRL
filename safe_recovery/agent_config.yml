@@ -1,33 +1,47 @@
 ---
 # Training mode
-recovery_mode: True
+recovery_mode_training: True
 
 # General parameters
 render: False
 network: 'mlp'
 replay_memory_size: 1000000
-
-# learning params
-gamma: 0.99
-tau: 0.01
-reward_scale: 1.0
-batch_size: 64
-critic_l2_reg: 0.01
-actor_lr: 0.0001
-critic_lr: 0.0001
-normalize_returns: false
-normalize_observations: false
-popart: false
-clip_norm:
-num_epochs: 2000
+max_rollout_steps: 5000
+num_epochs: 5000
 num_cycles_per_epoch: 1
 num_train_steps_per_cycle: 1  # originally 50 -- no idea why, maybe because of adap-param noise
-max_rollout_steps: 5000
 param_noise_adaption_interval: 50
 save_freq: 10
 logtostdout_freq: 10
 do_eval: false
 eval_freq: 10
+
+# learning params
+learning_params:
+  main_agent:
+    gamma: 0.99
+    tau: 0.01
+    reward_scale: 1.0
+    batch_size: 128
+    critic_l2_reg: 0.01
+    actor_lr: 0.0001
+    critic_lr: 0.00001
+    normalize_returns: false  # TODO(santara) fix reuse error
+    normalize_observations: false  # TODO(santara) fix reuse error
+    popart: false
+    clip_norm:
+  recovery_agent:
+    gamma: 0.99
+    tau: 0.01
+    reward_scale: 1.0
+    batch_size: 64
+    critic_l2_reg: 0.01
+    actor_lr: 0.00001
+    critic_lr: 0.0001
+    normalize_returns: false  # TODO(santara) fix reuse error
+    normalize_observations: false  # TODO(santara) fix reuse error
+    popart: false
+    clip_norm:
 
 # noise params
 random_seed: 701

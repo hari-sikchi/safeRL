@@ -1,10 +1,12 @@
 import os
+import sys
 import yaml
 import tensorflow as tf
 import numpy as np
 from collections import deque
 import pickle
 from munch import Munch
+from colorama import Fore, Style
 
 import MADRaS
 
@@ -16,10 +18,16 @@ from baselines import logger
 import time
 from model_base import Agent
 
+import gflags
+from gflags import FLAGS
+
 import pdb
 
-CONFIG_FILE = 'agent_config.yml'
-LOGDIR = 'logging/'
+
+gflags.DEFINE_string('CONFIG_FILE', 'agent_config.yml', 'Path to configuration file')
+gflags.DEFINE_string('LOGDIR', 'logging/', 'Path to logdir')
+FLAGS(sys.argv)
+
 
 try:
     from mpi4py import MPI
@@ -36,7 +44,7 @@ def yaml_loader(filepath):
 class Trainer(Agent):
     def __init__(self):
         self.env = make_vec_env('Madras-v0', 'madras', 1, 7)
-        self.config = yaml_loader(CONFIG_FILE)
+        self.config = yaml_loader(FLAGS.CONFIG_FILE)
         self.set_up_MPI()
         self.create_agent(self.env, self.config, training=True)
         self.max_action = self.env.action_space.high
@@ -58,9 +66,10 @@ class Trainer(Agent):
         new_obs, r, done, _ = self.env.step((self.max_action * action))  # scale for execution in env (as far as DDPG is concerned, every action is in [-1, 1])
         # note these outputs are batched from vecenv
 
-        if self.config.recovery_mode:
+        r *= 2
+        if self.config.recovery_mode_training:
             if not self.is_safe(new_obs):
-                r -= 10
+                r -= 100
 
         # Book-keeping.
         done = np.asarray(done)
@@ -79,7 +88,7 @@ class Trainer(Agent):
         # note these outputs are batched from vecenv
 
         if self.is_safe(obs):
-            r=[1.0]
+            r=[1000.0]
         else:
             r=[-1.0]
 
@@ -98,7 +107,7 @@ class Trainer(Agent):
         # pdb.set_trace()
         obs = init_obs
         for episode_step in range(self.config.max_rollout_steps):  #TODO(santara) implement multiple rollouts per policy
-            if self.config.recovery_mode:
+            if self.config.recovery_mode_training:
                 if self.is_safe(obs):
                     obs, r, done, _ = self.normal_step(obs)
                     episode_reward += r[0]
@@ -115,8 +124,7 @@ class Trainer(Agent):
                     episode_step += 1
                     reward_buffer_for_log.append(r)
                     if episode_step%self.config.logtostdout_freq == 0:
-                        print("\rEngaging recovery policy... Lane pos: {}\n".format(obs[0, 20]))
-                        print("\rRecovery policy | Mean Reward during steps {}-{}: {}, Cum Reward: {}".format(last_logged_episode_step+1, episode_step, np.mean(reward_buffer_for_log), episode_reward))
+                        print(f"\r{Fore.RED}Recovery policy | Mean Reward during steps {last_logged_episode_step+1}-{episode_step}: {np.mean(reward_buffer_for_log)}, Cum Reward: {episode_reward}, Lane pos: {obs[0, 20]}{Style.RESET_ALL}")
                         reward_buffer_for_log = []
                         last_logged_episode_step = episode_step
             else:
@@ -175,31 +183,31 @@ class Trainer(Agent):
                 episode_steps_history.append(num_steps)
 
                 # Train
-                for t_train in range(self.config.num_train_steps_per_cycle):
-                    # Adapt param noise, if necessary.
-                    if self.main_agent.Memory.nb_entries >= self.config.batch_size and t_train % self.config.param_noise_adaption_interval == 0 and self.config.noise_type == 'adaptive-param':
-                        distance = self.main_agent().adapt_param_noise()
-                        epoch_adaptive_distances.append(distance)
-                    if self.config.recovery_mode:
-                        if self.recovery_agent.Memory.nb_entries >= self.config.batch_size and t_train % self.config.param_noise_adaption_interval == 0 and self.config.noise_type == 'adaptive-param':
-                            distance = self.recovery_agent().adapt_param_noise()
-                            epoch_recovery_adaptive_distances.append(distance)
+            for t_train in range(self.config.num_train_steps_per_cycle):
+                # Adapt param noise, if necessary.
+                if self.main_agent.Memory.nb_entries >= self.config.batch_size and t_train % self.config.param_noise_adaption_interval == 0 and self.config.noise_type == 'adaptive-param':
+                    distance = self.main_agent().adapt_param_noise()
+                    epoch_adaptive_distances.append(distance)
+                if self.config.recovery_mode_training:
+                    if self.recovery_agent.Memory.nb_entries >= self.config.batch_size and t_train % self.config.param_noise_adaption_interval == 0 and self.config.noise_type == 'adaptive-param':
+                        distance = self.recovery_agent().adapt_param_noise()
+                        epoch_recovery_adaptive_distances.append(distance)
 
-                    # Train main policy
-                    cl, al = self.main_agent().train()
+                # Train main policy
+                cl, al = self.main_agent().train()
 
-                    epoch_critic_losses.append(cl)
-                    epoch_actor_losses.append(al)
-                    self.main_agent().update_target_net()
+                epoch_critic_losses.append(cl)
+                epoch_actor_losses.append(al)
+                self.main_agent().update_target_net()
 
-                    if self.config.recovery_mode:
-                        if self.recovery_agent.Memory.nb_entries>0:
-                            # Train recovery policy
-                            cl_r, al_r = self.recovery_agent().train()
+                if self.config.recovery_mode_training:
+                    if self.recovery_agent.Memory.nb_entries>0:
+                        # Train recovery policy
+                        cl_r, al_r = self.recovery_agent().train()
 
-                            epoch_recovery_critic_losses.append(cl_r)
-                            epoch_recovery_actor_losses.append(al_r)
-                            self.recovery_agent().update_target_net()
+                        epoch_recovery_critic_losses.append(cl_r)
+                        epoch_recovery_actor_losses.append(al_r)
+                        self.recovery_agent().update_target_net()
 
             end_time = time.time()
             epoch_time = end_time - start_time
@@ -248,7 +256,7 @@ class Trainer(Agent):
         combined_stats['rollout/run_avg_eps_steps'] = np.mean(episode_steps_history)
         combined_stats['train/main_actor_loss'] = np.mean(epoch_actor_losses)
         combined_stats['train/main_critic_loss'] = np.mean(epoch_critic_losses)
-        if self.config.recovery_mode:
+        if self.config.recovery_mode_training:
             if self.config.noise_type=='adaptive-param':
                 combined_stats['train/param_noise_distance'] = np.mean(epoch_adaptive_distances)
                 combined_stats['train/param_recovery_noise_distance'] = np.mean(epoch_recovery_adaptive_distances)
@@ -278,11 +286,14 @@ class Trainer(Agent):
         set_global_seeds(self.config.random_seed)
 
         # initialize logger
-        logger.configure(dir=LOGDIR, format_strs=['tensorboard'])
+        logger.configure(dir=FLAGS.LOGDIR, format_strs=['tensorboard'])
         logger.info('Using MAIN agent with the following configuration:')
         logger.info(str(self.main_agent.__dict__.items()))
         logger.info('Using RECOVERY agent with the following configuration:')
         logger.info(str(self.recovery_agent.__dict__.items()))
+
+        # make a copy of the config file in the logdir
+        os.system("cp %s %s"%(FLAGS.CONFIG_FILE, FLAGS.LOGDIR))
 
         # set up tensorflow session, saver and tensorboard
         self.sess = U.get_session()

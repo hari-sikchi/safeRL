@@ -37,12 +37,13 @@ class ExplorationNoise:
 
 
 class ActorCriticAgent:
-    def __init__(self, env, config, name='', training=True, **kwargs):
+    def __init__(self, env, config, name='', training=True, tag='main_agent', **kwargs):
         self.name = name
         self.env = env
         self.config = config
         self.nb_actions = self.env.action_space.shape[-1]
         self._training = training
+        self.tag = tag
 
         self.create_agent(kwargs)
 
@@ -69,19 +70,19 @@ class ActorCriticAgent:
                         self.Memory, 
                         self.env.observation_space.shape, 
                         self.env.action_space.shape,
-                        gamma=self.config.gamma, 
-                        tau=self.config.tau,
-                        normalize_returns=self.config.normalize_returns,
-                        normalize_observations=self.config.normalize_observations,
-                        batch_size=self.config.batch_size,
+                        gamma=self.config.learning_params[self.tag]['gamma'], 
+                        tau=self.config.learning_params[self.tag]['tau'],
+                        normalize_returns=self.config.learning_params[self.tag]['normalize_returns'],
+                        normalize_observations=self.config.learning_params[self.tag]['normalize_observations'],
+                        batch_size=self.config.learning_params[self.tag]['batch_size'],
                         action_noise=self.noise.action_noise,
                         param_noise=self.noise.param_noise,
-                        critic_l2_reg=self.config.critic_l2_reg,
-                        actor_lr=self.config.actor_lr,
-                        critic_lr=self.config.critic_lr,
-                        enable_popart=self.config.popart,
-                        clip_norm=self.config.clip_norm,
-                        reward_scale=self.config.reward_scale
+                        critic_l2_reg=self.config.learning_params[self.tag]['critic_l2_reg'],
+                        actor_lr=self.config.learning_params[self.tag]['actor_lr'],
+                        critic_lr=self.config.learning_params[self.tag]['critic_lr'],
+                        enable_popart=self.config.learning_params[self.tag]['popart'],
+                        clip_norm=self.config.learning_params[self.tag]['clip_norm'],
+                        reward_scale=self.config.learning_params[self.tag]['reward_scale']
                         )
 
     def initialize(self, sess):
@@ -96,8 +97,8 @@ class Agent:
         self.env = env
         self.config = config
         self._training = training
-        self.main_agent = ActorCriticAgent(self.env, self.config, name='main', training=self._training)
-        self.recovery_agent = ActorCriticAgent(self.env, self.config, name='recovery', training=self._training)
+        self.main_agent = ActorCriticAgent(self.env, self.config, name='main', training=self._training, tag='main_agent')
+        self.recovery_agent = ActorCriticAgent(self.env, self.config, name='recovery', training=self._training, tag='recovery_agent')
 
     def initialize(self, sess):
         self.main_agent.initialize(sess)
