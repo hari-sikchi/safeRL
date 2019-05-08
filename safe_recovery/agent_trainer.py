@@ -26,6 +26,7 @@ import pdb
 
 gflags.DEFINE_string('CONFIG_FILE', 'agent_config.yml', 'Path to configuration file')
 gflags.DEFINE_string('LOGDIR', 'logging/', 'Path to logdir')
+gflags.DEFINE_string('SAVEDIR', 'saved_models/', 'Path to checkpoints')
 FLAGS(sys.argv)
 
 
@@ -51,7 +52,7 @@ class Trainer(Agent):
 
     def save_model(self, epoch):
         logger.info('saving model...')
-        self.saver.save(self.sess, 'saved_models/my_model', global_step=epoch)
+        self.saver.save(self.sess, os.path.join(FLAGS.SAVEDIR, 'my_model'), global_step=epoch)
         logger.info('done saving model!')
 
     def is_safe(self, obs):
@@ -101,14 +102,18 @@ class Trainer(Agent):
 
     def do_rollout(self, init_obs, epoch):
         episode_reward = 0  # np.zeros(self.nenvs, dtype = np.float32) #vector
-        # episode_step = np.zeros(self.nenvs, dtype = int) # vector
         reward_buffer_for_log = []
+        num_constraint_violations = 0
+        num_recoveries = 0
+        danger_zone_flag = 0
         last_logged_episode_step = 0
-        # pdb.set_trace()
         obs = init_obs
         for episode_step in range(self.config.max_rollout_steps):  #TODO(santara) implement multiple rollouts per policy
             if self.config.recovery_mode_training:
                 if self.is_safe(obs):
+                    if danger_zone_flag:
+                        num_recoveries += 1
+                        danger_zone_flag = 0
                     obs, r, done, _ = self.normal_step(obs)
                     episode_reward += r[0]
                     episode_step += 1
@@ -119,6 +124,9 @@ class Trainer(Agent):
                         last_logged_episode_step = episode_step
 
                 else: # If you are in disaster zone deploy recovery policy
+                    if not danger_zone_flag:
+                        num_constraint_violations += 1
+                        danger_zone_flag = 1
                     obs, r, done, _ = self.recovery_step(obs)
                     episode_reward += r
                     episode_step += 1
@@ -149,7 +157,7 @@ class Trainer(Agent):
             self.save_model(epoch)
 
         self.reset()
-        return episode_reward, episode_step
+        return episode_reward, episode_step, num_constraint_violations, num_recoveries
 
     def train(self):
         # initialize the environment
@@ -163,6 +171,8 @@ class Trainer(Agent):
         for epoch in range(self.config.num_epochs):
             start_time = time.time()
             rewards_over_cycles = []
+            num_constraint_violations_over_cycles = []
+            num_recoveries_over_cycles = []
             for _ in range(self.config.num_cycles_per_epoch):
                 # pdb.set_trace()
                 if self.nenvs > 1:
@@ -177,19 +187,21 @@ class Trainer(Agent):
                 epoch_recovery_critic_losses = []
                 epoch_recovery_adaptive_distances = []
 
-                rewards, num_steps = self.do_rollout(obs, epoch)
+                rewards, num_steps, num_constraint_violations, num_recoveries = self.do_rollout(obs, epoch)
                 rewards_over_cycles.append(rewards)
+                num_constraint_violations_over_cycles.append(num_constraint_violations)
+                num_recoveries_over_cycles.append(num_recoveries)
                 episode_rewards_history.append(rewards)
                 episode_steps_history.append(num_steps)
 
                 # Train
             for t_train in range(self.config.num_train_steps_per_cycle):
                 # Adapt param noise, if necessary.
-                if self.main_agent.Memory.nb_entries >= self.config.batch_size and t_train % self.config.param_noise_adaption_interval == 0 and self.config.noise_type == 'adaptive-param':
+                if self.main_agent.Memory.nb_entries >= self.config.learning_params['main_agent']['batch_size'] and t_train % self.config.param_noise_adaption_interval == 0 and self.config.noise_type == 'adaptive-param':
                     distance = self.main_agent().adapt_param_noise()
                     epoch_adaptive_distances.append(distance)
                 if self.config.recovery_mode_training:
-                    if self.recovery_agent.Memory.nb_entries >= self.config.batch_size and t_train % self.config.param_noise_adaption_interval == 0 and self.config.noise_type == 'adaptive-param':
+                    if self.recovery_agent.Memory.nb_entries >= self.config.learning_params['recovery_agent']['batch_size'] and t_train % self.config.param_noise_adaption_interval == 0 and self.config.noise_type == 'adaptive-param':
                         distance = self.recovery_agent().adapt_param_noise()
                         epoch_recovery_adaptive_distances.append(distance)
 
@@ -220,6 +232,8 @@ class Trainer(Agent):
                 epoch,
                 epoch_time,
                 rewards_over_cycles,
+                num_constraint_violations_over_cycles,
+                num_recoveries_over_cycles,
                 episode_rewards_history,
                 episode_steps_history,
                 epoch_actor_losses,
@@ -237,6 +251,8 @@ class Trainer(Agent):
                 epoch,
                 epoch_time,
                 rewards_over_cycles,
+                num_constraint_violations_over_cycles,
+                num_recoveries_over_cycles,
                 episode_rewards_history,
                 episode_steps_history,
                 epoch_actor_losses,
@@ -260,6 +276,8 @@ class Trainer(Agent):
             if self.config.noise_type=='adaptive-param':
                 combined_stats['train/param_noise_distance'] = np.mean(epoch_adaptive_distances)
                 combined_stats['train/param_recovery_noise_distance'] = np.mean(epoch_recovery_adaptive_distances)
+            combined_stats['rollout/num_violations'] = np.mean(num_constraint_violations_over_cycles)
+            combined_stats['rollout/num_recoveries'] = np.mean(num_recoveries_over_cycles)
             combined_stats['train/recovery_actor_loss'] = np.mean(epoch_recovery_actor_losses)
             combined_stats['train/recovery_critic_loss'] = np.mean(epoch_recovery_critic_losses)
         combined_stats['total/epoch_duration'] = epoch_time
@@ -292,8 +310,8 @@ class Trainer(Agent):
         logger.info('Using RECOVERY agent with the following configuration:')
         logger.info(str(self.recovery_agent.__dict__.items()))
 
-        # make a copy of the config file in the logdir
-        os.system("cp %s %s"%(FLAGS.CONFIG_FILE, FLAGS.LOGDIR))
+        # make a copy of the config file in the savedir
+        os.system("cp %s %s"%(FLAGS.CONFIG_FILE, FLAGS.SAVEDIR))
 
         # set up tensorflow session, saver and tensorboard
         self.sess = U.get_session()
