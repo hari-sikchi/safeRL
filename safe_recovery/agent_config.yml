@@ -7,7 +7,7 @@ render: False
 network: 'mlp'
 replay_memory_size: 1000000
 max_rollout_steps: 5000
-num_epochs: 5000
+num_epochs: 10000
 num_cycles_per_epoch: 1
 num_train_steps_per_cycle: 1  # originally 50 -- no idea why, maybe because of adap-param noise
 param_noise_adaption_interval: 50
@@ -50,4 +50,7 @@ noise_std: 0.2
 
 # save params
 max_checkpoints_to_keep: 100
+
+# eval params
+num_eval_rollouts: 100
 ...
