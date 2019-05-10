@@ -113,6 +113,14 @@ class Agent:
     def is_safe(self, obs):
         return obs[0,20] >= -0.8 and obs[0,20] <= 0.8
 
+    def get_violation_margin(self, obs):
+        if obs[0,20] < -0.8:
+            return np.abs(obs[0,20] + 0.8)
+        elif obs[0,20] > 0.8:
+            return np.abs(obs[0,20] - 0.8)
+        else:
+            return 0.0
+
     def normal_step(self, obs):
         action, _, _, _ = self.main_agent().step(obs, apply_noise=True, compute_Q=True)
         if self.config.render:
@@ -146,7 +154,8 @@ class Agent:
         if self.is_safe(obs):
             r=[1000.0]
         else:
-            r=[-1.0]
+            # r=[-1.0]
+            r = [-10*self.get_violation_margin(obs)]
 
         # Book-keeping.
         done = np.asarray(done)

@@ -49,7 +49,7 @@ noise_type: 'ou'
 noise_std: 0.2
 
 # save params
-max_checkpoints_to_keep: 100
+max_checkpoints_to_keep: 1000
 
 # eval params
 num_eval_rollouts: 100

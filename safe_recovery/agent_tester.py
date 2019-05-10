@@ -25,6 +25,7 @@ from gflags import FLAGS
 gflags.DEFINE_string('CONFIG_FILE', 'agent_config.yml', 'Path to configuration file')
 gflags.DEFINE_string('LOGDIR', 'logging/', 'Path to logdir')
 gflags.DEFINE_string('SAVEDIR', 'saved_models/', 'Path to checkpoints')
+gflags.DEFINE_string('CKPT_FILE', None, 'Checkpoint file')
 FLAGS(sys.argv)
 
 
@@ -40,9 +41,9 @@ class Tester(Agent):
         self.config = yaml_loader(FLAGS.CONFIG_FILE)
         self.create_agent(self.env, self.config, training=False)
 
-    def restore_model(self, checkpoint=None):
-        if checkpoint:
-            self.saver.restore(self.sess, os.path.join(FLAGS.SAVEDIR, checkpoint))
+    def restore_model(self):
+        if FLAGS.CKPT_FILE:
+            self.saver.restore(self.sess, os.path.join(FLAGS.SAVEDIR, FLAGS.CKPT_FILE))
         else:
             self.saver.restore(self.sess, tf.train.latest_checkpoint(FLAGS.SAVEDIR))
 
@@ -71,7 +72,7 @@ class Tester(Agent):
         # initialize the agents
         self.initialize(self.sess)
         self.sess.graph.finalize()
-        self.restore_model(checkpoint)
+        self.restore_model()
         self.reset()
 
         self.test()
