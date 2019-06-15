@@ -22,10 +22,10 @@ import queue
 import yaml
 import random
 from copy import deepcopy
-sys.path.append('/home/harshit/work/baselines/')
+sys.path.append('/baselines/')
 
 import MADRaS
-from utils import *
+from recovery_utils import *
 #python libraries
 import gym
 import numpy as np
@@ -51,7 +51,7 @@ except ImportError:
 
 
 #print(logger.get_dir())
-logger.configure('/home/harshit/work/safeRL/safe_recovery/logging/')
+logger.configure('logging/')
 
 
 def _save_to_file(save_path, data=None, params=None):
@@ -208,19 +208,29 @@ def learn(network,
     max_action = env.action_space.high
     logger.info('scaling actions by {} before executing in env'.format(max_action))
 
+    # agent = DDPG(actor, critic, memory, env.observation_space.shape, env.action_space.shape,
+    #     gamma=gamma, tau=tau, normalize_returns=normalize_returns, normalize_observations=normalize_observations,
+    #     batch_size=batch_size, action_noise=action_noise, param_noise=param_noise, critic_l2_reg=critic_l2_reg,
+    #     actor_lr=actor_lr, critic_lr=critic_lr, enable_popart=popart, clip_norm=clip_norm,
+    #     reward_scale=reward_scale,target_actor_name="main_target_actor",target_critic_name="main_target_critic")
+
     agent = DDPG(actor, critic, memory, env.observation_space.shape, env.action_space.shape,
         gamma=gamma, tau=tau, normalize_returns=normalize_returns, normalize_observations=normalize_observations,
         batch_size=batch_size, action_noise=action_noise, param_noise=param_noise, critic_l2_reg=critic_l2_reg,
         actor_lr=actor_lr, critic_lr=critic_lr, enable_popart=popart, clip_norm=clip_norm,
-        reward_scale=reward_scale,target_actor_name="main_target_actor",target_critic_name="main_target_critic")
+        reward_scale=reward_scale)
 
+    # recovery_agent = DDPG(recovery_actor, recovery_critic, disaster_memory, env.observation_space.shape, env.action_space.shape,
+    #     gamma=gamma, tau=tau, normalize_returns=normalize_returns, normalize_observations=normalize_observations,
+    #     batch_size=batch_size, action_noise=recovery_action_noise, param_noise=recovery_param_noise, critic_l2_reg=critic_l2_reg,
+    #     actor_lr=actor_lr, critic_lr=critic_lr, enable_popart=popart, clip_norm=clip_norm,
+    #     reward_scale=reward_scale,name="_rec",target_actor_name="rec_target_actor",target_critic_name="rec_target_critic")
 
     recovery_agent = DDPG(recovery_actor, recovery_critic, disaster_memory, env.observation_space.shape, env.action_space.shape,
         gamma=gamma, tau=tau, normalize_returns=normalize_returns, normalize_observations=normalize_observations,
         batch_size=batch_size, action_noise=recovery_action_noise, param_noise=recovery_param_noise, critic_l2_reg=critic_l2_reg,
         actor_lr=actor_lr, critic_lr=critic_lr, enable_popart=popart, clip_norm=clip_norm,
-        reward_scale=reward_scale,name="_rec",target_actor_name="rec_target_actor",target_critic_name="rec_target_critic")
-
+        reward_scale=reward_scale)
 
 
     logger.info('Using agent with the following configuration:')
@@ -305,6 +315,8 @@ def learn(network,
                     
                     # max_action is of dimension A, whereas action is dimension (nenvs, A) - the multiplication gets broadcasted to the batch
                     new_obs, r, done, info = env.step((max_action * action))  # scale for execution in env (as far as DDPG is concerned, every action is in [-1, 1])
+                    if (new_obs[0,20]>0.8 and new_obs[0,20]<-0.8):
+                        r += -100
                     # note these outputs are batched from vecenv
                     episode_reward+=r
 
@@ -556,7 +568,6 @@ if __name__ == "__main__":
 
     #env = gym.make('MountainCarContinuous-v0')
     env = make_vec_env('Madras-v0', 'madras', 1, 7)
-
     model = learn('mlp',env,
         seed=7,
         nb_epochs=500

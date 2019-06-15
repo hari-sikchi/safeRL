@@ -2,7 +2,10 @@ safe_recovery/saved_models/
 safe_recovery/logging/
 safe_recovery/output/
 safe_recovery/old_policies/
-
+safe_recovery/logging_main/
+safe_recovery/old_tb_logs/
+safe_recovery/stashed_checkpoints/
+safe_recovery/__pycache__/
 
 *.o
 *.pyc
